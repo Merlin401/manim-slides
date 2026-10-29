@@ -9,6 +9,7 @@ from .checkhealth import checkhealth
 from .convert import convert
 from .logger import logger
 from .present import list_scenes, present
+from .prune import prune
 from .render import render
 from .wizard import init, wizard
 
@@ -68,6 +69,7 @@ cli.add_command(checkhealth)
 cli.add_command(init)
 cli.add_command(list_scenes)
 cli.add_command(present)
+cli.add_command(prune)
 cli.add_command(render)
 cli.add_command(wizard)
 

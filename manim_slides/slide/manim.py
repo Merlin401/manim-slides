@@ -6,6 +6,8 @@ from manim.renderer.opengl_renderer import OpenGLRenderer
 from manim.utils.color import rgba_to_color
 
 from ..config import BaseSlideConfig
+from ..logger import logger
+from ..prune import prune_after_render, prune_enabled
 from .base import BaseSlide
 
 
@@ -177,6 +179,42 @@ class Slide(BaseSlide, Scene):
 
         if flush_manim_cache:
             self.renderer.file_writer.flush_cache_directory()
+        else:
+            self._prune_after_render()
+
+    def _prune_after_render(self) -> None:
+        """
+        Mark the clips of a complete render as used and clear stale cache entries.
+
+        Skipped for partial renders, still images and dry runs, whose clip list does
+        not describe the whole scene, and when ``MANIM_PRUNE=0``.
+        See :mod:`manim_slides.prune` for the rules.
+        """
+        upto = config["upto_animation_number"]  # -1 or inf when unset
+        partial = config["from_animation_number"] > 0 or 0 <= upto < float("inf")
+        if (
+            not prune_enabled()
+            or partial
+            or config["save_last_frame"]
+            or config["dry_run"]
+            or not config["write_to_movie"]
+        ):
+            return
+        try:
+            removed = prune_after_render(
+                self.renderer.file_writer.partial_movie_directory,
+                Path(config["media_dir"]),
+                self._output_folder / f"{self}.json",
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Pruning the media cache failed: {e!r}")
+            return
+        count = sum(n for n, _ in removed.values())
+        if count:
+            freed = sum(b for _, b in removed.values()) / 1e6
+            logger.info(
+                f"Pruned {count} stale cache files ({freed:.0f} MB) from media/"
+            )
 
 
 class ThreeDSlide(Slide, ThreeDScene):

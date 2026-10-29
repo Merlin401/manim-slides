@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from ..commons import config_path_option, folder_path_option, verbosity_option
 from ..config import Config, PresentationConfig
 from ..logger import logger
+from ..prune import PRUNE_ENVVAR, prune_presented
 
 
 @click.command()
@@ -239,6 +240,16 @@ def start_at_callback(
     "If there is more than one screen, it will by default put the info window "
     "on a different screen than the main player.",
 )
+@click.option(
+    "--prune/--no-prune",
+    "prune_on_exit",
+    default=True,
+    envvar=PRUNE_ENVVAR,
+    show_envvar=True,
+    show_default=True,
+    help="On exit, delete clips of the presented scenes that their JSON no longer "
+    "references and that went unused for a week (see ``manim-slides prune``).",
+)
 @click.help_option("-h", "--help")
 @verbosity_option
 def present(  # noqa: C901
@@ -259,6 +270,7 @@ def present(  # noqa: C901
     next_terminates_loop: bool,
     hide_info_window: Literal["always", "never"] | None,
     info_window_screen_number: int | None,
+    prune_on_exit: bool,
 ) -> None:
     """
     Present SCENE(s), one at a time, in order.
@@ -360,4 +372,7 @@ def present(  # noqa: C901
     player.show(screens)
 
     signal.signal(signal.SIGINT, signal.SIG_DFL)
-    sys.exit(app.exec())
+    status = app.exec()
+    if prune_on_exit:
+        prune_presented(presentation_configs)
+    sys.exit(status)
