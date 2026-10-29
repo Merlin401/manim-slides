@@ -45,6 +45,13 @@ variable), 18 by default.
 The elapsed timer waits until you press `S`, or until the presentation first moves
 off the first slide, so you can set up long before the talk.
 
+Going back with `PREVIOUS` and jumping to a slide from the overview show that slide *finished*: it is
+paused on its last frame, so you land on what the audience last saw of it, not on the animation that
+leads there (which begins with the wipe from the page before). `NEXT` then goes on to the next slide as
+usual, and `REPLAY` plays the slide again. Looping slides still play, and so does a reversed clip, if
+there is one, so `REVERSE` and `PREVIOUS` with reversed clips are unchanged. Use `--no-skip-to-end` to
+play every slide from its start instead.
+
 The **overview** pauses the video and shows the last frame of every slide in a grid.
 The arrow keys move the highlight, `Enter` jumps to the highlighted slide, digits
 followed by `Enter` jump to a slide number, a click on a tile jumps too, and `O` or

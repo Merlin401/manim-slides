@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 from pytestqt.qtbot import QtBot
-from qtpy.QtCore import Qt, QUrl
+from qtpy.QtCore import QEvent, Qt, QUrl
 from qtpy.QtGui import QColor
 from qtpy.QtMultimedia import QMediaPlayer
 from qtpy.QtMultimediaWidgets import QVideoWidget
@@ -51,7 +51,8 @@ def shut_down_players() -> Iterator[None]:
     Stop the media players before Qt deletes them.
 
     Deleting a media player that is still decoding can crash Qt later on, in a test
-    that runs an event loop, so each test shuts its players down by itself.
+    that runs an event loop, so each test shuts its players down by itself and lets
+    the widgets that pytest-qt closed be deleted now, not during a later loop.
     """
     yield
     while PLAYERS:
@@ -60,6 +61,8 @@ def shut_down_players() -> Iterator[None]:
         for media_player in (player.media_player, player.info.next_media_player):
             media_player.stop()
             media_player.setSource(QUrl())
+    QApplication.processEvents()
+    QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     QApplication.processEvents()
 
 
@@ -669,3 +672,233 @@ def test_number_jumps_straight_to_the_first_slide(
 
     assert not player._number_flip_pending  # nothing leads to the first slide
     assert player.video_widget.number_text.startswith("1 / ")
+
+
+# BasicSlide: slides 0, 2 and 3 are plain, slide 1 loops. (index 0 is the first slide)
+
+
+def wait_until_finished(player: Player, qtbot: QtBot) -> None:
+    """Wait for the player to be paused on the last frame of the clip it loaded."""
+    media = player.media_player
+    qtbot.waitUntil(
+        lambda: (
+            media.duration() > 0
+            and media.position() >= media.duration() - 5
+            and media.playbackState() == QMediaPlayer.PlaybackState.PausedState
+        ),
+        timeout=5000,
+    )
+
+
+def finished(player: Player) -> bool:
+    return player._Player__termination_achieved  # ty: ignore[unresolved-attribute]
+
+
+def test_previous_without_reversed_clips_shows_the_slide_finished(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    player = make_player(without_reversed(presentation_config), qtbot)
+    at_slide(player, 3)
+
+    press(player, Qt.Key.Key_Left)
+
+    assert player.current_slide_index == 2
+    assert not player.playing_reversed_slide
+    assert finished(player)
+    wait_until_finished(player, qtbot)
+
+
+def test_the_last_frame_is_what_is_shown(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    import av
+    import numpy as np
+    from qtpy.QtGui import QImage
+
+    config = without_reversed(presentation_config)
+    player = make_player(config, qtbot)
+    at_slide(player, 3)
+    press(player, Qt.Key.Key_Left)
+    wait_until_finished(player, qtbot)
+    qtbot.waitUntil(lambda: player.frame.isValid(), timeout=5000)
+
+    with av.open(str(config.slides[2].file)) as container:
+        *_, last = container.decode(video=0)
+    expected = last.to_ndarray(format="rgb24")
+    image = player.frame.toImage().convertToFormat(QImage.Format.Format_RGB888)
+    pixels = image.constBits()
+    if hasattr(pixels, "setsize"):  # PyQt6 needs to be told how big the buffer is
+        pixels.setsize(image.sizeInBytes())
+    shown = np.frombuffer(pixels, np.uint8)
+    shown = shown.reshape(image.height(), image.bytesPerLine())
+    shown = shown[:, : image.width() * 3].reshape(image.height(), image.width(), 3)
+
+    assert shown.shape == expected.shape
+    assert np.abs(shown.astype(int) - expected.astype(int)).mean() < 1
+
+
+def test_next_after_skipping_to_the_end_goes_on(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    player = make_player(without_reversed(presentation_config), qtbot)
+    at_slide(player, 3)
+    press(player, Qt.Key.Key_Left)
+    assert player.current_slide_index == 2
+
+    press(player, Qt.Key.Key_Right)  # at once, even before the clip is loaded
+
+    assert player.current_slide_index == 3
+    assert not finished(player)  # slide 3 plays, as always
+
+
+def test_pause_key_does_not_restart_a_finished_slide(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    player = make_player(without_reversed(presentation_config), qtbot)
+    at_slide(player, 3)
+    press(player, Qt.Key.Key_Left)
+    wait_until_finished(player, qtbot)
+
+    press(player, Qt.Key.Key_Space)
+
+    assert player.media_player.playbackState() == QMediaPlayer.PlaybackState.PausedState
+
+
+def test_replay_plays_a_finished_slide_again(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    player = make_player(without_reversed(presentation_config), qtbot)
+    at_slide(player, 3)
+    press(player, Qt.Key.Key_Left)
+    wait_until_finished(player, qtbot)
+
+    press(player, Qt.Key.Key_R)
+
+    qtbot.waitUntil(
+        lambda: (
+            player.media_player.playbackState()
+            == QMediaPlayer.PlaybackState.PlayingState
+        ),
+        timeout=5000,
+    )
+
+
+def test_previous_still_plays_a_looping_slide(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    player = make_player(without_reversed(presentation_config), qtbot)
+    at_slide(player, 2)
+    assert player.current_presentation_config.slides[1].loop
+
+    press(player, Qt.Key.Key_Left)
+
+    assert player.current_slide_index == 1
+    assert not finished(player)
+    assert not player._end_seek_pending
+
+
+def test_previous_with_a_reversed_clip_still_plays_it(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    player = make_player(presentation_config, qtbot)
+    at_slide(player, 3)
+
+    press(player, Qt.Key.Key_Left)
+
+    assert player.playing_reversed_slide
+    assert not finished(player)
+    assert not player._end_seek_pending
+
+
+def test_reverse_key_plays_from_the_start_too(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    player = make_player(without_reversed(presentation_config), qtbot)
+    at_slide(player, 3)
+
+    press(player, Qt.Key.Key_V)  # an explicit request to play it back
+
+    assert player.current_slide_index == 2
+    assert not finished(player)
+
+
+def test_overview_jump_shows_the_slide_finished(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    player = make_player(presentation_config, qtbot)
+
+    press(player, Qt.Key.Key_O)
+    press(player, Qt.Key.Key_4)
+    press(player, Qt.Key.Key_Return)
+
+    assert player.current_slide_index == 3
+    assert finished(player)
+    wait_until_finished(player, qtbot)
+
+
+def test_overview_jump_to_a_looping_slide_plays_it(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    player = make_player(presentation_config, qtbot)
+
+    press(player, Qt.Key.Key_O)
+    press(player, Qt.Key.Key_2)
+    press(player, Qt.Key.Key_Return)
+
+    assert player.current_slide_index == 1
+    assert not finished(player)
+
+
+def test_skipping_can_be_turned_off(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    player = new_player(
+        qtbot, [without_reversed(presentation_config)], skip_to_end=False
+    )
+    player.info.timer.stop()
+    at_slide(player, 3)
+
+    press(player, Qt.Key.Key_Left)
+    assert not finished(player)
+
+    press(player, Qt.Key.Key_O)
+    press(player, Qt.Key.Key_4)
+    press(player, Qt.Key.Key_Return)
+    assert player.current_slide_index == 3
+    assert not finished(player)
+
+
+def test_going_back_from_the_first_slide_leaves_no_request_behind(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    player = make_player(without_reversed(presentation_config), qtbot)
+    assert player.current_slide_index == 0
+
+    press(player, Qt.Key.Key_Left)  # nothing to go back to
+    player.load_next_slide()  # so this must play, not show the slide finished
+
+    assert player.current_slide_index == 1
+    assert not finished(player)
+
+
+def test_number_is_final_when_a_slide_is_shown_finished(
+    presentation_config: PresentationConfig,
+    qtbot: QtBot,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    player = numbered_player(without_reversed(presentation_config), qtbot, monkeypatch)
+    count = player.current_slides_count
+    at_slide(player, 3)
+    player.flip_number()
+    assert player.video_widget.number_text == f"4 / {count}"
+
+    press(player, Qt.Key.Key_Left)
+
+    assert player.video_widget.number_text == f"3 / {count}"  # no change to wait for
+    assert not player._number_flip_pending
+
+
+def test_present_skip_to_end_option() -> None:
+    out = CliRunner().invoke(cli, ["-S", "present", "--help"])
+
+    assert "--skip-to-end / --no-skip-to-end" in out.stdout

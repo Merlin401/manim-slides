@@ -42,6 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PREVIOUS` now plays the reversed clip of the previous slide when there is one (like `REVERSE`),
   and plays the slide forwards as before when there is none, which is the default. `REVERSE` and
   `PREVIOUS` no longer leave the player in a reversed state when there is no previous slide.
+- Going back with `PREVIOUS` when there is no reversed clip, and jumping to a slide from the overview, now
+  show the slide finished (paused on its last frame, so `NEXT` goes on) instead of playing it from the start,
+  which began with the wipe from the page before. Looping slides still play. `--no-skip-to-end` brings the
+  old behavior back.
 - The info window layout stretches with the window, with a larger current slide, a smaller
   next-slide preview and the notes in a scrollable column that never takes the keyboard focus.
 - **Breaking change**: reversed animations are now opt-in. `skip_reversing` defaults to

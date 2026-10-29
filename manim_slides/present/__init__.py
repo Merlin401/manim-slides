@@ -276,6 +276,15 @@ def start_at_callback(
     "chapter, or off. Without this option, a scene's own `slide_numbers` decides.",
 )
 @click.option(
+    "--skip-to-end/--no-skip-to-end",
+    "skip_to_end",
+    default=True,
+    show_default=True,
+    help="When going back without a reversed clip, or jumping to a slide from the "
+    "overview, show the slide finished instead of playing its animation from the start "
+    "(which begins with the wipe from the page before). Looping slides still play.",
+)
+@click.option(
     "--prune/--no-prune",
     "prune_on_exit",
     default=True,
@@ -307,6 +316,7 @@ def present(  # noqa: C901
     info_window_screen_number: int | None,
     notes_size: float,
     numbers: str | None,
+    skip_to_end: bool,
     prune_on_exit: bool,
 ) -> None:
     """
@@ -406,6 +416,7 @@ def present(  # noqa: C901
         info_window_screen=info_window_screen,
         notes_size=notes_size,
         numbers=numbers,  # ty: ignore[invalid-argument-type]
+        skip_to_end=skip_to_end,
     )
 
     player.show(screens)

@@ -251,6 +251,7 @@ class Player(QMainWindow):
         info_window_screen: QScreen | None = None,
         notes_size: float = NOTES_PT,
         numbers: NumberMode | Literal["off"] | None = None,
+        skip_to_end: bool = True,
     ):
         super().__init__()
 
@@ -307,6 +308,13 @@ class Player(QMainWindow):
         # to change to is kept here until then.
         self._number_flip_pending = False
         self._number_after: tuple[int, int] | None = None
+        # Going back without a reversed clip, or jumping from the overview, would play a
+        # slide from its start, which begins with the animation from the page before.
+        # With skip_to_end the player goes to the end of the slide instead: the request
+        # is made by those two actions, the seek once the clip is loaded.
+        self.skip_to_end = skip_to_end
+        self._jump_to_end = False
+        self._end_seek_url: QUrl | None = None  # the clip to show finished, once loaded
         if numbers not in (None, "off") or any(c.numbers for c in presentation_configs):
             config_ = self.current_presentation_config
             self.video_widget: QVideoWidget | NumberedVideo = NumberedVideo(
@@ -342,6 +350,7 @@ class Player(QMainWindow):
         self.playback_rate = playback_rate
 
         self.media_player.positionChanged.connect(self.number_position_changed)
+        self.media_player.mediaStatusChanged.connect(self.end_seek_media_status_changed)
         self.media_player.mediaStatusChanged.connect(self.number_media_status_changed)
         self.presentation_changed.connect(self.presentation_changed_callback)
         self.slide_changed.connect(self.slide_changed_callback)
@@ -545,13 +554,17 @@ class Player(QMainWindow):
     Loading slides
     """
 
-    def load_current_media(self, start_paused: bool = False) -> None:
-        self.update_number()
+    def load_current_media(
+        self, start_paused: bool = False, at_end: bool = False
+    ) -> None:
+        self.update_number(at_end=at_end)
+        self._end_seek_url = None
         url = QUrl.fromLocalFile(str(self.current_file.resolve(strict=True)))
         if self.current_slide_config.type == SlideType.Video or (
             self.current_slide_config.type == SlideType.Image
             and self.current_file.suffix.lower() == ".gif"
         ):
+            same_source = self.media_player.source() == url
             self.media_player.setSource(url)
 
             self.media_stack.setCurrentWidget(self.video_widget)
@@ -568,7 +581,13 @@ class Player(QMainWindow):
                     self.current_slide_config.playback_rate * self.playback_rate
                 )
 
-            if start_paused:
+            if at_end:
+                self.media_player.pause()
+                self.__termination_achieved = True  # NEXT goes on, instead of playing
+                self._end_seek_url = url
+                if same_source:  # nothing is loaded again, so no status will tell
+                    self.seek_to_end()
+            elif start_paused:
                 self.media_player.pause()
             else:
                 self.media_player.play()
@@ -597,11 +616,49 @@ class Player(QMainWindow):
         else:
             self.media_player.setLoops(1)
 
+        at_end = (
+            self._jump_to_end
+            and self.skip_to_end
+            and not slide_config.loop
+            and not self.playing_reversed_slide
+            and slide_config.type == SlideType.Video
+        )
+        self._jump_to_end = False
+
         self.__prev_pos = -1
         self.__termination_requested = False
         self.__termination_achieved = False
 
-        self.load_current_media()
+        self.load_current_media(at_end=at_end)
+
+    @property
+    def _end_seek_pending(self) -> bool:
+        return self._end_seek_url is not None
+
+    def seek_to_end(self) -> None:
+        """
+        Show the last frame of the clip that is wanted finished, paused.
+
+        Only acts while that clip is the loaded one: a status that arrives late, for a
+        clip that was replaced since, must not move the player.
+        """
+        duration = self.media_player.duration()
+        if (
+            self._end_seek_url is None
+            or self.media_player.source() != self._end_seek_url
+            or duration <= 0
+        ):
+            return
+        self._end_seek_url = None
+        self.media_player.setPosition(max(duration - 1, 0))
+        self.media_player.pause()
+
+    def end_seek_media_status_changed(self, status: QMediaPlayer.MediaStatus) -> None:
+        if status in (
+            QMediaPlayer.MediaStatus.LoadedMedia,
+            QMediaPlayer.MediaStatus.BufferedMedia,
+        ):
+            self.seek_to_end()
 
     def load_previous_slide(self) -> None:
         if self.current_slide_index > 0:
@@ -668,9 +725,11 @@ class Player(QMainWindow):
             return None
         return slide_number(slides, index, mode)
 
-    def update_number(self) -> None:
+    def update_number(self, at_end: bool = False) -> None:
         """
         Show the number for the clip that starts playing, if numbers are on.
+
+        With ``at_end`` the clip is not played but shown finished, so there is no change to wait for.
 
         A slide's clip leads from the previous page to its own, so the number of the
         previous slide stays until the animation is half way, see
@@ -687,7 +746,7 @@ class Player(QMainWindow):
             start, end = (before if index > 0 else here), here
         is_video = self.current_slide_config.type == SlideType.Video
         delay = self.current_presentation_config.number_style.delay
-        if start == end or not is_video or delay <= 0:
+        if start == end or not is_video or delay <= 0 or at_end:
             start = end
         video.set_number(start)
         self._number_after = end
@@ -702,7 +761,6 @@ class Player(QMainWindow):
     def _media_duration(self) -> int:
         return self.media_player.duration()
 
-    @Slot(int)
     def number_position_changed(self, position: int) -> None:
         """Change the number once the clip is far enough, see :meth:`update_number`."""
         if not self._number_flip_pending:
@@ -714,7 +772,6 @@ class Player(QMainWindow):
         if position >= number_flip_ms(duration, delay_ms, self.playing_reversed_slide):
             self.flip_number()
 
-    @Slot(QMediaPlayer.MediaStatus)
     def number_media_status_changed(self, status: QMediaPlayer.MediaStatus) -> None:
         if status == QMediaPlayer.MediaStatus.EndOfMedia:
             self.flip_number()
@@ -767,6 +824,7 @@ class Player(QMainWindow):
         self._leave_overview()
         self.playing_reversed_slide = False
         self.current_slide_index = index
+        self._jump_to_end = True
         self.load_current_slide()
 
     def preview_next_slide(self) -> None:
@@ -835,11 +893,12 @@ class Player(QMainWindow):
 
     @Slot()
     def previous(self) -> None:
-        """Go back one slide, playing its reversed clip if there is one."""
+        """Go back one slide: play its reversed clip if there is one, else show it finished."""
         previous = self.previous_slide_config
         self.playing_reversed_slide = (
             previous is not None and previous.rev_file != previous.file
         )
+        self._jump_to_end = previous is not None and not self.playing_reversed_slide
         self.load_previous_slide()
 
     @Slot()
