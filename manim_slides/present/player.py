@@ -495,6 +495,17 @@ class Player(QMainWindow):
         self.__current_file = file
 
     @property
+    def previous_slide_config(self) -> SlideConfig | None:
+        if self.current_slide_index > 0:
+            return self.current_presentation_config.slides[self.current_slide_index - 1]
+        elif self.current_presentation_index > 0:
+            return self.presentation_configs[
+                self.current_presentation_index - 1
+            ].slides[-1]
+        else:
+            return None
+
+    @property
     def next_slide_config(self) -> SlideConfig | None:
         if self.playing_reversed_slide:
             return self.current_slide_config
@@ -773,12 +784,17 @@ class Player(QMainWindow):
 
     @Slot()
     def previous(self) -> None:
-        self.playing_reversed_slide = False
+        """Go back one slide, playing its reversed clip if there is one."""
+        previous = self.previous_slide_config
+        self.playing_reversed_slide = (
+            previous is not None and previous.rev_file != previous.file
+        )
         self.load_previous_slide()
 
     @Slot()
     def reverse(self) -> None:
-        self.playing_reversed_slide = True
+        """Go back one slide, playing its reversed clip (the slide itself if it has none)."""
+        self.playing_reversed_slide = self.previous_slide_config is not None
         self.load_previous_slide()
 
     @Slot()

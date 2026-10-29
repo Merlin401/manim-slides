@@ -277,9 +277,9 @@ length as it is). The bar is only available with `manim`, not with `manimgl`.
 
 ## Reversed Animations
 
-Reversed copies of every slide are only used by the presenter's `REVERSE` key
-(`PREVIOUS` just plays the previous slide forwards), and they cost render time and
-a lot of disk space, so they are **opt-in**. Render them with:
+Reversed copies of every slide are only used by the presenter, and they cost render time and
+a lot of disk space, so they are **opt-in**. With them, `PREVIOUS` and `REVERSE` play the reversed
+clip of the previous slide; without them, `PREVIOUS` plays the previous slide forwards. Render them with:
 
 ```bash
 manim-slides render --reverse presentation.py Presentation

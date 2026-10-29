@@ -401,3 +401,132 @@ def test_clicking_the_numbered_video_keeps_the_keys_working(
     player = make_player(presentation_config, qtbot, numbers="slide")
 
     assert player.video_widget.focusPolicy() == Qt.FocusPolicy.NoFocus
+
+
+def without_reversed(config: PresentationConfig, *indices: int) -> PresentationConfig:
+    """Copy of a config where the slides at ``indices`` (all if none) have no reversed clip."""
+    slides = [
+        s.model_copy(update={"rev_file": s.file}) if not indices or i in indices else s
+        for i, s in enumerate(config.slides)
+    ]
+    return config.model_copy(update={"slides": slides})
+
+
+def at_slide(player: Player, index: int) -> None:
+    player.current_slide_index = index
+    player.load_current_slide()
+
+
+def test_previous_plays_the_reversed_clip_when_there_is_one(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    slides = presentation_config.slides
+    assert slides[1].rev_file != slides[1].file  # the test data has reversed clips
+    player = make_player(presentation_config, qtbot)
+    at_slide(player, 2)
+
+    press(player, Qt.Key.Key_Left)
+
+    assert player.current_slide_index == 1
+    assert player.playing_reversed_slide
+    assert player.current_file == slides[1].rev_file
+
+
+def test_previous_plays_forwards_without_reversed_clips(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    config = without_reversed(presentation_config)
+    player = make_player(config, qtbot)
+    at_slide(player, 2)
+
+    press(player, Qt.Key.Key_Left)
+
+    assert player.current_slide_index == 1
+    assert not player.playing_reversed_slide
+    assert player.current_file == config.slides[1].file
+
+
+def test_previous_looks_at_the_slide_it_goes_back_to(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    config = without_reversed(presentation_config, 1)  # only slide 1 has none
+    player = make_player(config, qtbot)
+    at_slide(player, 3)
+
+    press(player, Qt.Key.Key_Left)  # back to slide 2, which has one
+    assert player.current_slide_index == 2
+    assert player.playing_reversed_slide
+    assert player.current_file == config.slides[2].rev_file
+
+    press(player, Qt.Key.Key_Left)  # back to slide 1, which has none
+    assert player.current_slide_index == 1
+    assert not player.playing_reversed_slide
+    assert player.current_file == config.slides[1].file
+
+
+def test_next_after_a_reversed_previous_replays_that_slide(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    player = make_player(presentation_config, qtbot)
+    at_slide(player, 2)
+    press(player, Qt.Key.Key_Left)
+
+    player.load_next_slide()
+
+    assert player.current_slide_index == 1  # as with REVERSE: played again, forwards
+    assert not player.playing_reversed_slide
+    assert player.current_file == presentation_config.slides[1].file
+
+
+def test_previous_on_the_first_slide_does_nothing(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    player = make_player(presentation_config, qtbot)
+    assert player.current_slide_index == 0
+
+    press(player, Qt.Key.Key_Left)
+    assert player.current_slide_index == 0
+    assert not player.playing_reversed_slide
+
+    press(player, Qt.Key.Key_V)  # REVERSE, too, must not leave a reversed state behind
+    assert not player.playing_reversed_slide
+
+    player.load_next_slide()
+    assert player.current_slide_index == 1
+
+
+def test_reverse_key_still_plays_the_reversed_clip(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    player = make_player(presentation_config, qtbot)
+    at_slide(player, 2)
+
+    press(player, Qt.Key.Key_V)
+
+    assert player.current_slide_index == 1
+    assert player.playing_reversed_slide
+    assert player.current_file == presentation_config.slides[1].rev_file
+
+
+def test_previous_goes_back_across_presentations(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    other = without_reversed(presentation_config)
+    player = Player(
+        Config(),
+        [presentation_config, other],
+        start_paused=True,
+        presentation_index=1,
+    )
+    qtbot.addWidget(player)
+    qtbot.addWidget(player.info)
+    player.info.timer.stop()
+    assert player.current_slide_index == 0
+
+    assert player.previous_slide_config == presentation_config.slides[-1]
+
+    press(player, Qt.Key.Key_Left)
+
+    assert player.current_presentation_index == 0
+    assert player.current_slide_index == player.current_slides_count - 1
+    assert player.playing_reversed_slide  # the first presentation has reversed clips
