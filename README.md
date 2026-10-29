@@ -27,6 +27,30 @@ Manim Slides will *automatically* detect the one you are using!
 > [`manim-presentation`](https://github.com/galatolofederico/manim-presentation),
 > with a lot more features!
 
+> [!IMPORTANT]
+> **This is a fork** of [Manim Slides](https://github.com/jeertmans/manim-slides)
+> by [Jérôme Eertmans](https://github.com/jeertmans) and its contributors, who did all
+> the work this is built on, and it is not affiliated with or endorsed by them.
+> It is released under the same [MIT license](LICENSE.md). For the original, use the
+> [upstream project](https://github.com/jeertmans/manim-slides) and its
+> [documentation](https://eertmans.be/manim-slides/).
+>
+> What the fork adds (see the
+> [changelog](https://github.com/Merlin401/manim-slides/blob/main/CHANGELOG.md)
+> and the [presenter docs](https://github.com/Merlin401/manim-slides/blob/main/docs/source/reference/gui.md)):
+> - `manim-slides prune`, which deletes stale slide clips and Manim's media cache, also run after
+>   a complete render and when the presenter exits;
+> - reversed clips are opt-in (`manim-slides render --reverse`), and `PREVIOUS` plays them
+>   when they exist;
+> - a presenter window that stretches with its window, with resizable notes, an elapsed timer
+>   you can start and restart, and a slide overview grid to jump around;
+> - slide numbers (`k / N`, counting slides, pages or chapters) drawn by the player
+>   instead of rendered into the clips, with `manim-slides present --numbers`;
+> - an overall render progress bar (Manim only).
+>
+> Install it from Git instead of PyPI, for example with
+> `uv add "manim-slides @ git+https://github.com/Merlin401/manim-slides"`.
+
 - [Installation](#installation)
 - [Usage](#usage)
 - [Comparison with Similar Tools](#comparison-with-similar-tools)
