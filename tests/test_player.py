@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 from pytestqt.qtbot import QtBot
-from qtpy.QtCore import Qt
+from qtpy.QtCore import Qt, QUrl
 from qtpy.QtGui import QColor
 from qtpy.QtMultimedia import QMediaPlayer
 from qtpy.QtMultimediaWidgets import QVideoWidget
@@ -31,16 +31,44 @@ from manim_slides.present.numbered_video import NumberedVideo
 from manim_slides.present.overview import Overview, thumbnail_path
 from manim_slides.present.player import Player
 
+PLAYERS: list[Player] = []
+
+
+def new_player(
+    qtbot: QtBot, presentations: list[PresentationConfig], **kwargs: object
+) -> Player:
+    """Build a paused player, which is shut down again after the test."""
+    player = Player(Config(), presentations, start_paused=True, **kwargs)
+    qtbot.addWidget(player)
+    qtbot.addWidget(player.info)
+    PLAYERS.append(player)
+    return player
+
+
+@pytest.fixture(autouse=True)
+def shut_down_players() -> Iterator[None]:
+    """
+    Stop the media players before Qt deletes them.
+
+    Deleting a media player that is still decoding can crash Qt later on, in a test
+    that runs an event loop, so each test shuts its players down by itself.
+    """
+    yield
+    while PLAYERS:
+        player = PLAYERS.pop()
+        player.info.timer.stop()
+        for media_player in (player.media_player, player.info.next_media_player):
+            media_player.stop()
+            media_player.setSource(QUrl())
+    QApplication.processEvents()
+
 
 @pytest.fixture
 def player(presentation_config: PresentationConfig, qtbot: QtBot) -> Iterator[Player]:
-    player = Player(Config(), [presentation_config], start_paused=True)
-    qtbot.addWidget(player)
-    qtbot.addWidget(player.info)
+    player = new_player(qtbot, [presentation_config])
     player.info.resize(1600, 900)
     player.show(QApplication.screens())
     yield player
-    player.info.timer.stop()
 
 
 def press(player: Player, key: Qt.Key) -> None:
@@ -94,15 +122,12 @@ def test_notes_size_is_limited(player: Player) -> None:
 def test_notes_start_size_and_reset(
     presentation_config: PresentationConfig, qtbot: QtBot
 ) -> None:
-    player = Player(Config(), [presentation_config], start_paused=True, notes_size=30)
-    qtbot.addWidget(player)
-    qtbot.addWidget(player.info)
+    player = new_player(qtbot, [presentation_config], notes_size=30)
 
     assert player.info.notes_pt == 30
     player.info.resize_notes(+NOTES_PT_STEP)
     player.info.resize_notes(None)
     assert player.info.notes_pt == 30
-    player.info.timer.stop()
 
 
 def test_clicking_the_notes_keeps_the_keys_working(player: Player) -> None:
@@ -291,9 +316,7 @@ def test_present_notes_size_option() -> None:
 def make_player(
     presentation_config: PresentationConfig, qtbot: QtBot, **kwargs: object
 ) -> Player:
-    player = Player(Config(), [presentation_config], start_paused=True, **kwargs)
-    qtbot.addWidget(player)
-    qtbot.addWidget(player.info)
+    player = new_player(qtbot, [presentation_config], **kwargs)
     player.info.timer.stop()
     return player
 
@@ -523,14 +546,7 @@ def test_previous_goes_back_across_presentations(
     presentation_config: PresentationConfig, qtbot: QtBot
 ) -> None:
     other = without_reversed(presentation_config)
-    player = Player(
-        Config(),
-        [presentation_config, other],
-        start_paused=True,
-        presentation_index=1,
-    )
-    qtbot.addWidget(player)
-    qtbot.addWidget(player.info)
+    player = new_player(qtbot, [presentation_config, other], presentation_index=1)
     player.info.timer.stop()
     assert player.current_slide_index == 0
 
