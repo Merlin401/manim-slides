@@ -40,6 +40,11 @@ class Slide(BaseSlide, Scene):
         up the process (because it can be done in parallel) while taking
         less memory.
         Set this to :data:`None` to disable splitting the file into chunks.
+    :cvar typing.Optional[str] slide_numbers: :data:`None`: Default for
+        ``manim-slides present --numbers``: ``slide``, ``page`` or ``chapter``
+        (see :mod:`manim_slides.numbering`). The option overrides it.
+    :cvar typing.Optional[NumberStyle] number_style: :data:`None`: How the presenter
+        draws the slide number, see :class:`~manim_slides.config.NumberStyle`.
     :cvar typing.Optional[int] num_processes: :data:`None`: Number of processes
         to use for parallelizable operations.
         If :data:`None`, defaults to :func:`os.process_cpu_count`.

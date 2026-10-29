@@ -18,6 +18,7 @@ from tqdm import tqdm
 
 from ..config import (
     BaseSlideConfig,
+    NumberStyle,
     PresentationConfig,
     PreSlideConfig,
     SlideConfig,
@@ -25,6 +26,7 @@ from ..config import (
 )
 from ..defaults import FOLDER_PATH, REVERSE_ENVVAR
 from ..logger import logger
+from ..numbering import parse_number_mode
 from ..utils import concatenate_video_files, merge_basenames, reverse_video_file
 from . import MANIM
 
@@ -49,6 +51,8 @@ class BaseSlide:
     disable_caching: bool = False
     flush_cache: bool = False
     skip_reversing: bool | None = None
+    slide_numbers: str | None = None
+    number_style: NumberStyle | None = None
     max_duration_before_split_reverse: float | None = 4.0
     num_processes: int | None = None
 
@@ -438,6 +442,12 @@ class BaseSlide:
                 ``manim-slides convert --to=pptx``.
         :param dedent_notes:
             If set, apply :func:`textwrap.dedent` to notes.
+        :param page_start:
+            Next slide starts a page, for ``manim-slides present --numbers page``.
+            See also :meth:`start_page`.
+        :param chapter_start:
+            Next slide starts a chapter, for ``manim-slides present --numbers chapter``.
+            See also :meth:`start_chapter`.
         :param pathlib.Path src:
             An optional path to a video file to include as next slide.
 
@@ -592,6 +602,20 @@ class BaseSlide:
         self._base_slide_config = base_slide_config
         self._start_animation = self._current_animation
 
+    def start_page(self) -> None:
+        """
+        Mark the slide being built as the start of a page.
+
+        Unlike ``next_slide(page_start=True)``, which marks the slide that *follows*, this
+        marks the current one. Pages are what ``--numbers page`` counts, so the click steps
+        within one do not advance the number.
+        """
+        self._base_slide_config.page_start = True
+
+    def start_chapter(self) -> None:
+        """Mark the slide being built as the start of a chapter, see :meth:`start_page`."""
+        self._base_slide_config.chapter_start = True
+
     def _add_last_slide(self) -> None:
         """Add a 'last' slide to the end of slides."""
         if (
@@ -703,10 +727,17 @@ class BaseSlide:
 
         slide_path = self._output_folder / f"{scene_name}.json"
 
+        numbers = {}
+        if self.slide_numbers is not None:
+            numbers["numbers"] = parse_number_mode(self.slide_numbers)
+        if self.number_style is not None:
+            numbers["number_style"] = self.number_style
+
         PresentationConfig(
             slides=slides,
             resolution=self._resolution,
             background_color=self._background_color,
+            **numbers,
         ).to_file(slide_path)
 
         logger.info(

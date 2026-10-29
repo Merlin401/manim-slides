@@ -1,6 +1,7 @@
 # type: ignore
 
 from manim_slides import Slide, ThreeDSlide
+from manim_slides.config import NumberStyle
 from manim_slides.slide import MANIM, MANIMGL
 
 if MANIM:
@@ -45,6 +46,27 @@ class BasicSlideSkipReversing(BasicSlide):
 
 class BasicSlideReversing(BasicSlide):
     skip_reversing = False
+
+
+class NumberedSlide(BasicSlide):
+    slide_numbers = "page"
+    number_style = NumberStyle(size=0.05, right=0.1)
+
+    def construct(self):
+        square = Square()
+
+        self.start_chapter()
+        self.start_page()
+        self.play(GrowFromCenter(square))
+
+        self.next_slide()
+        self.play(Rotate(square, +PI / 2))
+
+        self.next_slide(page_start=True)
+        self.play(Rotate(square, -PI / 2))
+
+        self.next_slide(chapter_start=True, page_start=True)
+        self.play(Rotate(square, +PI / 2))
 
 
 class FailingSlide(Slide):

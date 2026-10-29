@@ -51,6 +51,48 @@ followed by `Enter` jump to a slide number, a click on a tile jumps too, and `O`
 `Esc` closes the grid and resumes. The thumbnails are cached in a `.thumbs` folder
 next to the slide clips.
 
+## Slide Numbers
+
+The player can draw the slide number, as `k / N`, over the slides:
+
+```bash
+manim-slides present --numbers MODE MyScene
+```
+
+where `MODE` is one of:
+
+- `slide`: every slide;
+- `page`: slides that start a page, so the click steps within a page do not count;
+- `chapter`: slides that start a chapter;
+- `off`: no number.
+
+The same can be set with the environment variable `MANIM_SLIDE_NUMBERS` (`1` means `slide`), and
+a scene can pick a default with the class attribute `slide_numbers = "page"`. The option wins.
+
+Pages and chapters are marked in the scene, on the slide being built, with
+`self.start_page()` and `self.start_chapter()`, or on the slide that follows a
+`next_slide()` with `next_slide(page_start=True)` and `next_slide(chapter_start=True)`.
+A scene that marks chapters shows no number before its first chapter, e.g., on a title slide.
+
+The class attribute `number_style` (a {class}`~manim_slides.config.NumberStyle`) sets
+the colors, font, size and position, all relative to the slide:
+
+```python
+from manim_slides import Slide
+from manim_slides.config import NumberStyle
+
+
+class Presentation(Slide):
+    slide_numbers = "page"
+    number_style = NumberStyle(color="#404040", size=0.03, right=0.04, bottom=0.04)
+```
+
+:::{note}
+The number is not part of the rendered clips, so it can be switched on, off and changed
+without rendering again. It needs a graphics view instead of the plain video widget, which
+is only used when numbers are on. It is not drawn on image slides nor in exports.
+:::
+
 ## Configuration File
 
 It is possible to configure Manim Slides via a configuration file, even though

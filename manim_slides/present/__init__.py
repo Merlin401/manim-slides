@@ -10,8 +10,19 @@ from pydantic import ValidationError
 from ..commons import config_path_option, folder_path_option, verbosity_option
 from ..config import Config, PresentationConfig
 from ..logger import logger
+from ..numbering import NUMBERS_ENVVAR, parse_number_mode
 from ..prune import PRUNE_ENVVAR, prune_presented
 from .constants import NOTES_PT, NOTES_PT_ENVVAR, NOTES_PT_RANGE
+
+
+def numbers_callback(ctx: Context, param: Parameter, value: str | None) -> str | None:
+    """Return a number mode, ``off`` if numbers are turned off, or ``None`` if unset."""
+    if value is None:
+        return None
+    try:
+        return parse_number_mode(value) or "off"
+    except ValueError as e:
+        raise click.BadParameter(str(e)) from None
 
 
 @click.command()
@@ -254,6 +265,17 @@ def start_at_callback(
     "while presenting with the BIGGER NOTES, SMALLER NOTES and RESET NOTES SIZE keys.",
 )
 @click.option(
+    "--numbers",
+    "numbers",
+    metavar="MODE",
+    default=None,
+    callback=numbers_callback,
+    envvar=NUMBERS_ENVVAR,
+    show_envvar=True,
+    help="Draw the slide number (k / N) over the slides, counting slide, page or "
+    "chapter, or off. Without this option, a scene's own `slide_numbers` decides.",
+)
+@click.option(
     "--prune/--no-prune",
     "prune_on_exit",
     default=True,
@@ -284,6 +306,7 @@ def present(  # noqa: C901
     hide_info_window: Literal["always", "never"] | None,
     info_window_screen_number: int | None,
     notes_size: float,
+    numbers: str | None,
     prune_on_exit: bool,
 ) -> None:
     """
@@ -382,6 +405,7 @@ def present(  # noqa: C901
         hide_info_window=should_hide_info_window,
         info_window_screen=info_window_screen,
         notes_size=notes_size,
+        numbers=numbers,  # ty: ignore[invalid-argument-type]
     )
 
     player.show(screens)

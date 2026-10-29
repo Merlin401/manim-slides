@@ -185,6 +185,24 @@ class Config(BaseModel):
         return self
 
 
+class NumberStyle(BaseModel):
+    """
+    How the presenter draws the slide number (``k / N``), set by the scene.
+
+    Sizes and positions are fractions of the slide, so they hold at any resolution.
+    """
+
+    color: Color = Color("#666666")
+    total_color: Color = Color("#999999")
+    font: str | None = None
+    size: Annotated[float, Field(gt=0, le=0.5)] = 0.034  # em, in slide heights
+    total_size: Annotated[float, Field(gt=0, le=0.5)] = 0.024
+    right: Annotated[float, Field(ge=0, lt=1)] = 0.03  # of the slide width
+    bottom: Annotated[float, Field(ge=0, lt=1)] = (
+        0.03  # of the slide height, to the middle
+    )
+
+
 class BaseSlideConfig(BaseModel):
     """Base class for slide config."""
 
@@ -198,6 +216,8 @@ class BaseSlideConfig(BaseModel):
     src: FilePath | None = None
     type: SlideType = SlideType.Video
     direction: Literal["horizontal", "vertical"] = "horizontal"
+    page_start: bool = False
+    chapter_start: bool = False
 
     @model_validator(mode="after")
     def determine_slide_type(self) -> "BaseSlideConfig":
@@ -349,6 +369,8 @@ class PresentationConfig(BaseModel):
     slides: list[SlideConfig] = Field(min_length=1)
     resolution: tuple[PositiveInt, PositiveInt] = (1920, 1080)
     background_color: Color = Color("black")
+    numbers: Literal["slide", "page", "chapter"] | None = None
+    number_style: NumberStyle = Field(default_factory=NumberStyle)
 
     @classmethod
     def from_file(cls, path: Path) -> "PresentationConfig":

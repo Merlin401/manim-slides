@@ -1,9 +1,10 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 from qtpy.QtCore import Qt, QTimer, QUrl, Signal, Slot
-from qtpy.QtGui import QCloseEvent, QIcon, QKeyEvent, QPixmap, QScreen
+from qtpy.QtGui import QCloseEvent, QColor, QIcon, QKeyEvent, QPixmap, QScreen
 from qtpy.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoFrame
 from qtpy.QtMultimediaWidgets import QVideoWidget
 from qtpy.QtWidgets import (
@@ -19,6 +20,7 @@ from qtpy.QtWidgets import (
 
 from ..config import Config, PresentationConfig, SlideConfig, SlideType
 from ..logger import logger
+from ..numbering import NumberMode, slide_number
 from ..resources import *
 from .constants import (
     NOTES_PT,
@@ -26,6 +28,7 @@ from .constants import (
     PREVIEW_WIDTH,
     clamp_notes_pt,
 )
+from .numbered_video import NumberedVideo
 from .overview import Overview, thumbnail_path
 from .widgets import AspectBox
 
@@ -247,6 +250,7 @@ class Player(QMainWindow):
         hide_info_window: bool = False,
         info_window_screen: QScreen | None = None,
         notes_size: float = NOTES_PT,
+        numbers: NumberMode | Literal["off"] | None = None,
     ):
         super().__init__()
 
@@ -296,9 +300,23 @@ class Player(QMainWindow):
         self.frame = QVideoFrame()
 
         self.audio_output = QAudioOutput()
-        self.video_widget = QVideoWidget()
+        # The slide number is drawn by a graphics view, which costs more than the plain
+        # video widget, so that is only used when a number is asked for.
+        self.numbers = numbers
+        if numbers not in (None, "off") or any(c.numbers for c in presentation_configs):
+            config_ = self.current_presentation_config
+            self.video_widget: QVideoWidget | NumberedVideo = NumberedVideo(
+                config_.resolution,
+                QColor(config_.background_color.as_hex()),
+                aspect_ratio_mode,
+                config_.number_style,
+            )
+            self.video_output = self.video_widget.video_item
+        else:
+            self.video_widget = QVideoWidget()
+            self.video_widget.setAspectRatioMode(aspect_ratio_mode)
+            self.video_output = self.video_widget
         self.video_sink = self.video_widget.videoSink()
-        self.video_widget.setAspectRatioMode(aspect_ratio_mode)
 
         self.image_label = QLabel(self)
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -316,7 +334,7 @@ class Player(QMainWindow):
 
         self.media_player = QMediaPlayer(self)
         self.media_player.setAudioOutput(self.audio_output)
-        self.media_player.setVideoOutput(self.video_widget)
+        self.media_player.setVideoOutput(self.video_output)
         self.playback_rate = playback_rate
 
         self.presentation_changed.connect(self.presentation_changed_callback)
@@ -616,7 +634,28 @@ class Player(QMainWindow):
         self.info.slide_notes.setText(self.current_slide_config.notes)
         if self.info.start_time is None and index > 0:
             self.info.start_timer()  # the talk has started
+        self.update_number()
         self.preview_next_slide()
+
+    @property
+    def number_mode(self) -> NumberMode | None:
+        """What the slide number counts: the option, else the scene's own default."""
+        if self.numbers == "off":
+            return None
+        return self.numbers or self.current_presentation_config.numbers
+
+    def update_number(self) -> None:
+        """Show the number of the current slide, if numbers are on."""
+        if not isinstance(self.video_widget, NumberedVideo):
+            return
+        mode = self.number_mode
+        self.video_widget.set_number(
+            slide_number(
+                self.current_presentation_config.slides, self.current_slide_index, mode
+            )
+            if mode
+            else None
+        )
 
     def _thumbnails(self) -> list[QPixmap | None]:
         index = self.current_presentation_index

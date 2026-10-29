@@ -7,17 +7,26 @@ import pytest
 from click.testing import CliRunner
 from pytestqt.qtbot import QtBot
 from qtpy.QtCore import Qt
+from qtpy.QtGui import QColor
+from qtpy.QtMultimediaWidgets import QVideoWidget
 from qtpy.QtTest import QTest
 from qtpy.QtWidgets import QApplication
 
 from manim_slides.__main__ import cli
-from manim_slides.config import Config, Keys, PresentationConfig, SlideConfig
+from manim_slides.config import (
+    Config,
+    Keys,
+    NumberStyle,
+    PresentationConfig,
+    SlideConfig,
+)
 from manim_slides.present.constants import (
     NOTES_PT,
     NOTES_PT_RANGE,
     NOTES_PT_STEP,
     clamp_notes_pt,
 )
+from manim_slides.present.numbered_video import NumberedVideo
 from manim_slides.present.overview import Overview, thumbnail_path
 from manim_slides.present.player import Player
 
@@ -276,3 +285,119 @@ def test_present_notes_size_option() -> None:
     out = runner.invoke(cli, ["-S", "present", "--notes-size", "5"])
     assert out.exit_code == 2
     assert "not in the range" in out.output
+
+
+def make_player(
+    presentation_config: PresentationConfig, qtbot: QtBot, **kwargs: object
+) -> Player:
+    player = Player(Config(), [presentation_config], start_paused=True, **kwargs)
+    qtbot.addWidget(player)
+    qtbot.addWidget(player.info)
+    player.info.timer.stop()
+    return player
+
+
+def test_no_numbers_keeps_the_plain_video_widget(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    player = make_player(presentation_config, qtbot)
+
+    assert isinstance(player.video_widget, QVideoWidget)
+    assert player.number_mode is None
+
+
+def test_numbers_off_overrides_the_scene(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    config = presentation_config.model_copy(update={"numbers": "slide"})
+
+    player = make_player(config, qtbot, numbers="off")
+
+    assert player.number_mode is None
+    assert player.video_widget.number_text == ""  # type: ignore[union-attr]
+
+
+def test_slide_numbers_follow_the_slides(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    player = make_player(presentation_config, qtbot, numbers="slide")
+    count = player.current_slides_count
+
+    assert isinstance(player.video_widget, NumberedVideo)
+    assert player.video_widget.number_text == f"1 / {count}"
+
+    player.load_next_slide()
+    assert player.video_widget.number_text == f"2 / {count}"
+
+    player.load_previous_slide()
+    assert player.video_widget.number_text == f"1 / {count}"
+
+
+def test_the_scene_decides_without_the_option(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    slides = [s.model_copy() for s in presentation_config.slides]
+    for i, slide in enumerate(slides):
+        slide.page_start = i in (1, 3)
+        slide.chapter_start = i == 1
+    config = presentation_config.model_copy(
+        update={"slides": slides, "numbers": "page"}
+    )
+
+    player = make_player(config, qtbot)
+    video = player.video_widget
+    assert isinstance(video, NumberedVideo)
+    assert video.number_text == ""  # before the first chapter / page
+
+    player.load_next_slide()
+    assert video.number_text == "1 / 2"
+    player.load_next_slide()
+    assert video.number_text == "1 / 2"
+    player.load_next_slide()
+    assert video.number_text == "2 / 2"
+
+    player.numbers = "chapter"
+    player.update_number()
+    assert video.number_text == "1 / 1"
+
+
+def test_number_is_drawn_in_the_corner_with_the_scenes_style(qtbot: QtBot) -> None:
+    style = NumberStyle(right=0.1, bottom=0.2)
+    video = NumberedVideo(
+        (1000, 500), QColor("black"), Qt.AspectRatioMode.KeepAspectRatio, style
+    )
+    qtbot.addWidget(video)
+    video.set_number((7, 33))
+
+    number, total = video._number, video._total
+    right_edge = total.pos().x() + total.boundingRect().width()
+    middle = total.pos().y() + total.boundingRect().height() / 2
+
+    assert right_edge == pytest.approx(900)  # 10 % in from the right
+    assert middle == pytest.approx(400)  # 20 % up from the bottom
+    assert number.pos().x() + number.boundingRect().width() < total.pos().x()
+    assert number.zValue() > video.video_item.zValue()
+
+    video.set_number(None)
+    assert video.number_text == ""
+
+
+def test_number_font_scales_with_the_slide_height(qtbot: QtBot) -> None:
+    small = NumberedVideo(
+        (1000, 500), QColor("black"), Qt.AspectRatioMode.KeepAspectRatio, NumberStyle()
+    )
+    large = NumberedVideo(
+        (2000, 1000), QColor("black"), Qt.AspectRatioMode.KeepAspectRatio, NumberStyle()
+    )
+    qtbot.addWidget(small)
+    qtbot.addWidget(large)
+
+    assert large._number.font().pixelSize() == 2 * small._number.font().pixelSize()
+
+
+def test_clicking_the_numbered_video_keeps_the_keys_working(
+    presentation_config: PresentationConfig, qtbot: QtBot
+) -> None:
+    player = make_player(presentation_config, qtbot, numbers="slide")
+
+    assert player.video_widget.focusPolicy() == Qt.FocusPolicy.NoFocus
