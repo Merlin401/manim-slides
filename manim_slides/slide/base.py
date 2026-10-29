@@ -78,6 +78,9 @@ class BaseSlide:
         self._base_slide_config: BaseSlideConfig = BaseSlideConfig()
         self._current_slide = 1
         self._current_animation = 0
+        self._render_seconds: float | None = (
+            None  # stored in the JSON, for progress bars
+        )
         self._start_animation = 0
         self._canvas: MutableMapping[str, Mobject] = {}
         self._wait_time_between_slides = 0.0
@@ -737,6 +740,7 @@ class BaseSlide:
             slides=slides,
             resolution=self._resolution,
             background_color=self._background_color,
+            render_seconds=self._render_seconds,
             **numbers,
         ).to_file(slide_path)
 

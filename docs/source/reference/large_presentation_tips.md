@@ -260,6 +260,21 @@ and the `slides/` folder first.  This ensures no silently failed or stale
 artifacts are included in the final output.
 :::
 
+## Render Progress
+
+Rendering a big scene shows one progress bar for the whole scene instead of Manim's
+short-lived bar per animation: video seconds done and total, rate (`vs/s`, video seconds
+per second) and the time left. Waits on a still frame are free to render and not counted.
+
+The total comes from `render_seconds`, which every complete render stores in
+`slides/<Scene>.json`. Before there is one, the scene's `construct()` is run once with
+rendering skipped to count the animations; a scene with side effects in `construct()` can
+check `self.is_precount`. Rendering only a part of the scene (`-n`) keeps the stored value.
+
+The environment variables are `MANIM_PROGRESS=0` (no overall bar, Manim's own bars stay),
+`MANIM_PROGRESS_PRECOUNT=0` (never pre-count) and `MANIM_PROGRESS_CACHE=0` (keep the stored
+length as it is). The bar is only available with `manim`, not with `manimgl`.
+
 ## Reversed Animations
 
 Reversed copies of every slide are only used by the presenter's `REVERSE` key

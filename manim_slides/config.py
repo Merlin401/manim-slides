@@ -371,6 +371,7 @@ class PresentationConfig(BaseModel):
     background_color: Color = Color("black")
     numbers: Literal["slide", "page", "chapter"] | None = None
     number_style: NumberStyle = Field(default_factory=NumberStyle)
+    render_seconds: float | None = None  # video length of the last complete render
 
     @classmethod
     def from_file(cls, path: Path) -> "PresentationConfig":

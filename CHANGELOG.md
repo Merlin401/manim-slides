@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `manim-slides render --reverse` (and `MANIM_REVERSE`) to generate reversed animations.
 - Added a slide overview to the player (`OVERVIEW` key): a grid of the last frame of every slide
   to jump to.
+- Added an overall render progress bar (video seconds done / total, rate, ETA) to Manim scenes, with the
+  total taken from `render_seconds`, the video length of the last complete render that is now stored
+  in `slides/<Scene>.json`, or from a pre-count. `MANIM_PROGRESS=0` turns it off.
 - Added slide numbers (`k / N`) drawn by the player, with `manim-slides present --numbers MODE`
   (`MANIM_SLIDE_NUMBERS`) and the `slide_numbers` class attribute. They count slides, pages
   (`start_page()`, `next_slide(page_start=True)`) or chapters (`start_chapter()`,

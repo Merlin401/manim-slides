@@ -9,9 +9,16 @@ from ..config import BaseSlideConfig
 from ..logger import logger
 from ..prune import prune_after_render, prune_enabled
 from .base import BaseSlide
+from .progress import (
+    CACHE_ENVVAR,
+    RenderProgressMixin,
+    env_enabled,
+    partial_render,
+    read_render_seconds,
+)
 
 
-class Slide(BaseSlide, Scene):
+class Slide(RenderProgressMixin, BaseSlide, Scene):
     """
     Inherits from :class:`Scene<manim.scene.scene.Scene>` and provides necessary tools
     for slides rendering.
@@ -175,9 +182,22 @@ class Slide(BaseSlide, Scene):
             # We need to postpone flushing *after* we saved slides
             config["flush_cache"] = False
 
-        super().render(*args, **kwargs)
+        stored_seconds = read_render_seconds(self._output_folder / f"{self}.json")
+        self._progress_start(stored_seconds)
+        try:
+            super().render(*args, **kwargs)
+        finally:
+            self._progress_stop()
 
         config["max_files_cached"] = max_files_cached
+
+        # Only a complete render knows the length of the scene
+        complete = (
+            not partial_render()
+            and not config["save_last_frame"]
+            and env_enabled(CACHE_ENVVAR)
+        )
+        self._render_seconds = self._seconds_total if complete else stored_seconds
 
         self._save_slides(
             use_cache=not (config["disable_caching"] or self.disable_caching),
@@ -198,11 +218,9 @@ class Slide(BaseSlide, Scene):
         not describe the whole scene, and when ``MANIM_PRUNE=0``.
         See :mod:`manim_slides.prune` for the rules.
         """
-        upto = config["upto_animation_number"]  # -1 or inf when unset
-        partial = config["from_animation_number"] > 0 or 0 <= upto < float("inf")
         if (
             not prune_enabled()
-            or partial
+            or partial_render()
             or config["save_last_frame"]
             or config["dry_run"]
             or not config["write_to_movie"]
