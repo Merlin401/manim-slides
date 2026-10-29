@@ -74,6 +74,11 @@ Pages and chapters are marked in the scene, on the slide being built, with
 `next_slide()` with `next_slide(page_start=True)` and `next_slide(chapter_start=True)`.
 A scene that marks chapters shows no number before its first chapter, e.g., on a title slide.
 
+A slide's clip starts with the animation that leads from the previous page, a wipe for instance,
+so the number does not change at the very start but `delay` seconds into the clip (0.5 by default,
+half way into a 1 s wipe). A reversed clip plays that animation last, so there it changes `delay`
+seconds before the end. Set `NumberStyle(delay=0)` to change it at once.
+
 The class attribute `number_style` (a {class}`~manim_slides.config.NumberStyle`) sets
 the colors, font, size and position, all relative to the slide:
 

@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from manim_slides.__main__ import cli
 from manim_slides.config import BaseSlideConfig, NumberStyle, PresentationConfig
-from manim_slides.numbering import parse_number_mode, slide_number
+from manim_slides.numbering import number_flip_ms, parse_number_mode, slide_number
 from manim_slides.slide.base import BaseSlide
 from manim_slides.slide.manim import Slide as CESlide
 from manim_slides.slide.manimlib import Slide as GLSlide
@@ -180,3 +180,30 @@ def test_present_numbers_option() -> None:
     out = runner.invoke(cli, ["-S", "present", "--numbers", "sections"])
     assert out.exit_code == 2
     assert "Unknown slide number mode" in out.output
+
+
+@pytest.mark.parametrize(
+    ("duration", "delay", "reverse", "expected"),
+    [
+        (3000, 500, False, 500),
+        (3000, 500, True, 2500),
+        (3000, 0, False, 0),
+        (3000, 0, True, 3000),
+        (300, 500, False, 300),  # a clip shorter than the delay: at its end
+        (300, 500, True, 0),  # reversed: at its start, the end of the animation
+        (3000, -5, False, 0),
+    ],
+)
+def test_number_flip_ms(
+    duration: int, delay: int, reverse: bool, expected: int
+) -> None:
+    assert number_flip_ms(duration, delay, reverse) == expected
+
+
+def test_number_style_delay_is_validated() -> None:
+    assert NumberStyle().delay == 0.5
+    assert NumberStyle(delay=0).delay == 0
+
+    for bad in (-1, 11):
+        with pytest.raises(ValidationError):
+            NumberStyle(delay=bad)

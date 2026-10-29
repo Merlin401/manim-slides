@@ -20,7 +20,7 @@ from qtpy.QtWidgets import (
 
 from ..config import Config, PresentationConfig, SlideConfig, SlideType
 from ..logger import logger
-from ..numbering import NumberMode, slide_number
+from ..numbering import NumberMode, number_flip_ms, slide_number
 from ..resources import *
 from .constants import (
     NOTES_PT,
@@ -303,6 +303,10 @@ class Player(QMainWindow):
         # The slide number is drawn by a graphics view, which costs more than the plain
         # video widget, so that is only used when a number is asked for.
         self.numbers = numbers
+        # The number changes part way into a slide's clip (see NumberStyle.delay): the one
+        # to change to is kept here until then.
+        self._number_flip_pending = False
+        self._number_after: tuple[int, int] | None = None
         if numbers not in (None, "off") or any(c.numbers for c in presentation_configs):
             config_ = self.current_presentation_config
             self.video_widget: QVideoWidget | NumberedVideo = NumberedVideo(
@@ -337,6 +341,8 @@ class Player(QMainWindow):
         self.media_player.setVideoOutput(self.video_output)
         self.playback_rate = playback_rate
 
+        self.media_player.positionChanged.connect(self.number_position_changed)
+        self.media_player.mediaStatusChanged.connect(self.number_media_status_changed)
         self.presentation_changed.connect(self.presentation_changed_callback)
         self.slide_changed.connect(self.slide_changed_callback)
 
@@ -540,6 +546,7 @@ class Player(QMainWindow):
     """
 
     def load_current_media(self, start_paused: bool = False) -> None:
+        self.update_number()
         url = QUrl.fromLocalFile(str(self.current_file.resolve(strict=True)))
         if self.current_slide_config.type == SlideType.Video or (
             self.current_slide_config.type == SlideType.Image
@@ -645,7 +652,6 @@ class Player(QMainWindow):
         self.info.slide_notes.setText(self.current_slide_config.notes)
         if self.info.start_time is None and index > 0:
             self.info.start_timer()  # the talk has started
-        self.update_number()
         self.preview_next_slide()
 
     @property
@@ -655,18 +661,63 @@ class Player(QMainWindow):
             return None
         return self.numbers or self.current_presentation_config.numbers
 
-    def update_number(self) -> None:
-        """Show the number of the current slide, if numbers are on."""
-        if not isinstance(self.video_widget, NumberedVideo):
-            return
+    def _number_of(self, index: int) -> tuple[int, int] | None:
         mode = self.number_mode
-        self.video_widget.set_number(
-            slide_number(
-                self.current_presentation_config.slides, self.current_slide_index, mode
-            )
-            if mode
-            else None
-        )
+        slides = self.current_presentation_config.slides
+        if mode is None or not 0 <= index < len(slides):
+            return None
+        return slide_number(slides, index, mode)
+
+    def update_number(self) -> None:
+        """
+        Show the number for the clip that starts playing, if numbers are on.
+
+        A slide's clip leads from the previous page to its own, so the number of the
+        previous slide stays until the animation is half way, see
+        :attr:`NumberStyle.delay`. Reversed, it is the other way around.
+        """
+        video = self.video_widget
+        if not isinstance(video, NumberedVideo):
+            return
+        index = self.current_slide_index
+        here, before = self._number_of(index), self._number_of(index - 1)
+        if self.playing_reversed_slide:
+            start, end = here, before
+        else:
+            start, end = (before if index > 0 else here), here
+        is_video = self.current_slide_config.type == SlideType.Video
+        delay = self.current_presentation_config.number_style.delay
+        if start == end or not is_video or delay <= 0:
+            start = end
+        video.set_number(start)
+        self._number_after = end
+        self._number_flip_pending = start != end
+
+    def flip_number(self) -> None:
+        """Change to the number of the slide, now, if it is still waiting to."""
+        if self._number_flip_pending and isinstance(self.video_widget, NumberedVideo):
+            self._number_flip_pending = False
+            self.video_widget.set_number(self._number_after)
+
+    def _media_duration(self) -> int:
+        return self.media_player.duration()
+
+    @Slot(int)
+    def number_position_changed(self, position: int) -> None:
+        """Change the number once the clip is far enough, see :meth:`update_number`."""
+        if not self._number_flip_pending:
+            return
+        duration = self._media_duration()
+        if duration <= 0:
+            return
+        delay_ms = round(self.current_presentation_config.number_style.delay * 1000)
+        if position >= number_flip_ms(duration, delay_ms, self.playing_reversed_slide):
+            self.flip_number()
+
+    @Slot(QMediaPlayer.MediaStatus)
+    def number_media_status_changed(self, status: QMediaPlayer.MediaStatus) -> None:
+        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+            self.flip_number()
 
     def _thumbnails(self) -> list[QPixmap | None]:
         index = self.current_presentation_index

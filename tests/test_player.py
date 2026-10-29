@@ -8,6 +8,7 @@ from click.testing import CliRunner
 from pytestqt.qtbot import QtBot
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QColor
+from qtpy.QtMultimedia import QMediaPlayer
 from qtpy.QtMultimediaWidgets import QVideoWidget
 from qtpy.QtTest import QTest
 from qtpy.QtWidgets import QApplication
@@ -327,9 +328,13 @@ def test_slide_numbers_follow_the_slides(
     assert player.video_widget.number_text == f"1 / {count}"
 
     player.load_next_slide()
+    assert (
+        player.video_widget.number_text == f"1 / {count}"
+    )  # until the animation is half way
+    player.flip_number()
     assert player.video_widget.number_text == f"2 / {count}"
 
-    player.load_previous_slide()
+    player.load_previous_slide()  # played forwards: the same, back to the first slide
     assert player.video_widget.number_text == f"1 / {count}"
 
 
@@ -350,10 +355,16 @@ def test_the_scene_decides_without_the_option(
     assert video.number_text == ""  # before the first chapter / page
 
     player.load_next_slide()
+    assert video.number_text == ""  # first chapter and page: it waits for the animation
+    player.flip_number()
     assert video.number_text == "1 / 2"
+
+    player.load_next_slide()  # same page: nothing to wait for
+    assert video.number_text == "1 / 2"
+
     player.load_next_slide()
     assert video.number_text == "1 / 2"
-    player.load_next_slide()
+    player.flip_number()
     assert video.number_text == "2 / 2"
 
     player.numbers = "chapter"
@@ -530,3 +541,115 @@ def test_previous_goes_back_across_presentations(
     assert player.current_presentation_index == 0
     assert player.current_slide_index == player.current_slides_count - 1
     assert player.playing_reversed_slide  # the first presentation has reversed clips
+
+
+def numbered_player(
+    config: PresentationConfig,
+    qtbot: QtBot,
+    monkeypatch: pytest.MonkeyPatch,
+    **kwargs: object,
+) -> Player:
+    player = make_player(config, qtbot, numbers="slide", **kwargs)
+    monkeypatch.setattr(player, "_media_duration", lambda: 3000)
+    return player
+
+
+def test_number_changes_part_way_into_the_clip(
+    presentation_config: PresentationConfig,
+    qtbot: QtBot,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    player = numbered_player(presentation_config, qtbot, monkeypatch)
+    count = player.current_slides_count
+    player.load_next_slide()  # the default delay is 0.5 s
+
+    player.number_position_changed(0)
+    player.number_position_changed(499)
+    assert player.video_widget.number_text == f"1 / {count}"
+
+    player.number_position_changed(500)
+    assert player.video_widget.number_text == f"2 / {count}"
+
+    player.number_position_changed(900)  # changes once
+    assert not player._number_flip_pending
+
+
+def test_number_waits_for_the_clip_to_be_known(
+    presentation_config: PresentationConfig,
+    qtbot: QtBot,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    player = numbered_player(presentation_config, qtbot, monkeypatch)
+    monkeypatch.setattr(player, "_media_duration", lambda: 0)
+    count = player.current_slides_count
+    player.load_next_slide()
+
+    player.number_position_changed(5000)
+
+    assert player.video_widget.number_text == f"1 / {count}"
+
+
+def test_reversed_clip_changes_the_number_near_its_end(
+    presentation_config: PresentationConfig,
+    qtbot: QtBot,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    player = numbered_player(presentation_config, qtbot, monkeypatch)
+    count = player.current_slides_count
+    at_slide(player, 2)
+    player.flip_number()
+    assert player.video_widget.number_text == f"3 / {count}"
+
+    press(player, Qt.Key.Key_Left)  # plays the reversed clip of slide 2 (index 1)
+    assert player.playing_reversed_slide
+    assert player.video_widget.number_text == f"2 / {count}"  # what is on screen
+
+    player.number_position_changed(2499)
+    assert player.video_widget.number_text == f"2 / {count}"
+
+    player.number_position_changed(2500)  # 3000 ms clip, 500 ms before its end
+    assert player.video_widget.number_text == f"1 / {count}"
+
+
+def test_number_changes_at_the_end_of_the_clip_at_the_latest(
+    presentation_config: PresentationConfig,
+    qtbot: QtBot,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    player = numbered_player(presentation_config, qtbot, monkeypatch)
+    count = player.current_slides_count
+    player.load_next_slide()
+
+    player.number_media_status_changed(QMediaPlayer.MediaStatus.LoadedMedia)
+    assert player.video_widget.number_text == f"1 / {count}"
+
+    player.number_media_status_changed(QMediaPlayer.MediaStatus.EndOfMedia)
+    assert player.video_widget.number_text == f"2 / {count}"
+
+
+def test_number_delay_zero_changes_at_once(
+    presentation_config: PresentationConfig,
+    qtbot: QtBot,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = presentation_config.model_copy(
+        update={"number_style": NumberStyle(delay=0)}
+    )
+    player = numbered_player(config, qtbot, monkeypatch)
+    count = player.current_slides_count
+
+    player.load_next_slide()
+
+    assert player.video_widget.number_text == f"2 / {count}"
+    assert not player._number_flip_pending
+
+
+def test_number_jumps_straight_to_the_first_slide(
+    presentation_config: PresentationConfig,
+    qtbot: QtBot,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    player = numbered_player(presentation_config, qtbot, monkeypatch)
+
+    assert not player._number_flip_pending  # nothing leads to the first slide
+    assert player.video_widget.number_text.startswith("1 / ")

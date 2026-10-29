@@ -24,7 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added slide numbers (`k / N`) drawn by the player, with `manim-slides present --numbers MODE`
   (`MANIM_SLIDE_NUMBERS`) and the `slide_numbers` class attribute. They count slides, pages
   (`start_page()`, `next_slide(page_start=True)`) or chapters (`start_chapter()`,
-  `next_slide(chapter_start=True)`), and are styled by the `number_style` class attribute.
+  `next_slide(chapter_start=True)`), and are styled by the `number_style` class attribute. The number
+  changes part way into a slide's clip (`NumberStyle.delay`), when its wipe is half way.
   A graphics view is only used instead of the plain video widget when numbers are on.
 - Added `BIGGER NOTES`, `SMALLER NOTES` and `RESET NOTES SIZE` keys and `--notes-size`
   (`MANIM_NOTES_PT`) to resize the presenter notes.

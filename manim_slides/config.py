@@ -201,6 +201,10 @@ class NumberStyle(BaseModel):
     bottom: Annotated[float, Field(ge=0, lt=1)] = (
         0.03  # of the slide height, to the middle
     )
+    # The number changes this long (s) into a slide's clip, when its animation (a wipe, say)
+    # is half way, instead of at the very start. A reversed clip changes it this long before
+    # its end. 0 changes it at once.
+    delay: Annotated[float, Field(ge=0, le=10)] = 0.5
 
 
 class BaseSlideConfig(BaseModel):

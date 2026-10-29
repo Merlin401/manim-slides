@@ -53,6 +53,19 @@ def parse_number_mode(value: str | bool | None) -> NumberMode | None:
     )
 
 
+def number_flip_ms(duration_ms: int, delay_ms: int, reverse: bool) -> int:
+    """
+    Return the time in a clip, in ms, at which the slide number changes.
+
+    A slide's clip starts with the animation that leads from the previous page to this
+    one, so the number changes ``delay_ms`` into it, to match what is on screen.
+    A reversed clip plays that animation last, so the number changes ``delay_ms`` before
+    its end. A clip shorter than the delay changes it at its end (or start, reversed).
+    """
+    delay = min(max(delay_ms, 0), duration_ms)
+    return max(duration_ms - delay, 0) if reverse else delay
+
+
 def slide_number(
     slides: Sequence[BaseSlideConfig], index: int, mode: NumberMode
 ) -> tuple[int, int] | None:
