@@ -183,7 +183,11 @@ def test_clear_cache(
 )
 @pytest.mark.parametrize(
     ("klass", "skip_reversing"),
-    [("BasicSlide", False), ("BasicSlideSkipReversing", True)],
+    [
+        ("BasicSlide", True),
+        ("BasicSlideSkipReversing", True),
+        ("BasicSlideReversing", False),
+    ],
 )
 def test_skip_reversing(
     renderer: str,
@@ -694,3 +698,65 @@ class TestSlide:
 
                 with pytest.raises(KeyError):
                     self.remove_from_canvas("text")
+
+
+@pytest.mark.parametrize("renderer", ["--CE", "--GL"])
+@pytest.mark.parametrize(
+    ("klass", "args", "env", "reversed_generated"),
+    [
+        ("BasicSlide", ["--reverse"], {}, True),
+        ("BasicSlide", [], {"MANIM_REVERSE": "1"}, True),
+        ("BasicSlide", ["--no-reverse"], {"MANIM_REVERSE": "1"}, False),
+        ("BasicSlideSkipReversing", ["--reverse"], {}, False),
+        ("BasicSlideReversing", ["--no-reverse"], {}, True),
+    ],
+)
+def test_reverse_option(
+    renderer: str,
+    slides_file: Path,
+    manimgl_config: Path,
+    klass: str,
+    args: list[str],
+    env: dict[str, str],
+    reversed_generated: bool,
+) -> None:
+    runner = CliRunner()
+
+    with runner.isolated_filesystem() as tmp_dir:
+        shutil.copy(manimgl_config, tmp_dir)
+        results = runner.invoke(
+            render, [renderer, *args, str(slides_file), klass, "-ql"], env=env
+        )
+
+        assert results.exit_code == 0, results
+
+        config = PresentationConfig.from_file(
+            (Path(tmp_dir) / "slides" / f"{klass}.json").resolve(strict=True)
+        )
+
+        for slide in config.slides:
+            assert (slide.file != slide.rev_file) == reversed_generated
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, False),
+        ("", False),
+        ("0", False),
+        ("1", True),
+        (" True ", True),
+        ("no", False),
+    ],
+)
+def test_reverse_requested(
+    monkeypatch: pytest.MonkeyPatch, value: str | None, expected: bool
+) -> None:
+    from manim_slides.slide.base import reverse_requested
+
+    if value is None:
+        monkeypatch.delenv("MANIM_REVERSE", raising=False)
+    else:
+        monkeypatch.setenv("MANIM_REVERSE", value)
+
+    assert reverse_requested() is expected

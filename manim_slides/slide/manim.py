@@ -23,12 +23,15 @@ class Slide(BaseSlide, Scene):
         cached animation files.
     :cvar bool flush_cache: :data:`False`: Whether to flush the cache.
         Unlike with Manim, flushing is performed before rendering.
-    :cvar bool skip_reversing: :data:`False`: Whether to generate reversed animations.
-        If set to :data:`False`, and no cached reversed animation
+    :cvar typing.Optional[bool] skip_reversing: :data:`None`: Whether to skip generating
+        reversed animations. If :data:`None`, reversed animations are only generated when
+        requested with ``manim-slides render --reverse`` (or ``MANIM_REVERSE=1``).
+        If skipped, and no cached reversed animation
         exists (or caching is disabled) for a given slide,
         then the reversed animation will be simply the same
         as the original one, i.e., ``rev_file = file``,
-        for the current slide config.
+        for the current slide config. Set it to :data:`False` to always
+        generate them.
     :cvar typing.Optional[float] max_duration_before_split_reverse: :data:`4.0`: Maximum duration
         before of a video animation before it is reversed by splitting the file into smaller chunks.
         Generating reversed animations can require an important amount of
@@ -174,7 +177,7 @@ class Slide(BaseSlide, Scene):
         self._save_slides(
             use_cache=not (config["disable_caching"] or self.disable_caching),
             flush_cache=(config["flush_cache"] or self.flush_cache),
-            skip_reversing=self.skip_reversing,
+            skip_reversing=self._skip_reversing,
         )
 
         if flush_manim_cache:

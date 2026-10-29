@@ -2,6 +2,7 @@ from __future__ import annotations
 
 __all__ = ["BaseSlide"]
 
+import os
 import platform
 import shutil
 from abc import abstractmethod
@@ -22,7 +23,7 @@ from ..config import (
     SlideConfig,
     SlideType,
 )
-from ..defaults import FOLDER_PATH
+from ..defaults import FOLDER_PATH, REVERSE_ENVVAR
 from ..logger import logger
 from ..utils import concatenate_video_files, merge_basenames, reverse_video_file
 from . import MANIM
@@ -38,12 +39,31 @@ else:
 LEFT: np.ndarray = np.array([-1.0, 0.0, 0.0])
 
 
+def reverse_requested() -> bool:
+    """Whether ``MANIM_REVERSE`` asks for reversed animations (``1`` / ``true`` / ``yes`` / ``on``)."""
+    value = os.environ.get(REVERSE_ENVVAR, "")
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
 class BaseSlide:
     disable_caching: bool = False
     flush_cache: bool = False
-    skip_reversing: bool = False
+    skip_reversing: bool | None = None
     max_duration_before_split_reverse: float | None = 4.0
     num_processes: int | None = None
+
+    @property
+    def _skip_reversing(self) -> bool:
+        """
+        Whether to skip generating reversed animations.
+
+        Reversed animations are opt-in: unless the class sets :attr:`skip_reversing`
+        explicitly, they are only generated when ``MANIM_REVERSE`` asks for them
+        (see ``manim-slides render --reverse``).
+        """
+        if self.skip_reversing is not None:
+            return self.skip_reversing
+        return not reverse_requested()
 
     def __init__(
         self, *args: Any, output_folder: Path = FOLDER_PATH, **kwargs: Any

@@ -10,6 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (unreleased)=
 ## [Unreleased](https://github.com/jeertmans/manim-slides/compare/v5.7.0...HEAD)
 
+(unreleased-added)=
+### Added
+
+- Added `manim-slides prune` to delete stale slide clips and Manim's media cache,
+  and pruning after complete renders and when `manim-slides present` exits.
+- Added `manim-slides render --reverse` (and `MANIM_REVERSE`) to generate reversed animations.
+
+(unreleased-changed)=
+### Changed
+
+- **Breaking change**: reversed animations are now opt-in. `skip_reversing` defaults to
+  `None`, meaning "only when requested"; set it to `False` to always generate them.
+
 (v5.7.0)=
 ## [v5.7.0](https://github.com/jeertmans/manim-slides/compare/v5.6.0...v5.7.0)
 

@@ -43,6 +43,10 @@ class BasicSlideSkipReversing(BasicSlide):
     skip_reversing = True
 
 
+class BasicSlideReversing(BasicSlide):
+    skip_reversing = False
+
+
 class FailingSlide(Slide):
     def construct(self):
         self.play("this fails to render")

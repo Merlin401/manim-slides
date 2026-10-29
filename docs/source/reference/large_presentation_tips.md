@@ -260,14 +260,22 @@ and the `slides/` folder first.  This ensures no silently failed or stale
 artifacts are included in the final output.
 :::
 
-## Disable Reverse-Animation
+## Reversed Animations
 
-By default, Manim Slides generates a reversed copy of every slide so that you
-can navigate backwards during a live presentation. For output formats that do
-not use reversed animations, such as PPTX or HTML, this step can be safely
-turned off to reduce rendering time.
+Reversed copies of every slide are only used by the presenter's `REVERSE` key
+(`PREVIOUS` just plays the previous slide forwards), and they cost render time and
+a lot of disk space, so they are **opt-in**. Render them with:
 
-Set the class attribute `skip_reversing = True` to turn it off:
+```bash
+manim-slides render --reverse presentation.py Presentation
+```
+
+or set the environment variable `MANIM_REVERSE=1`. `--no-reverse` overrides the
+environment variable.
+
+A scene can also decide for itself with the class attribute `skip_reversing`,
+which overrides both: `skip_reversing = False` always generates them,
+`skip_reversing = True` never does.
 
 ```python
 from manim import *
@@ -275,7 +283,7 @@ from manim_slides import Slide
 
 
 class Presentation(Slide):
-    skip_reversing = True
+    skip_reversing = False
 
     def construct(self):
         self.play(...)

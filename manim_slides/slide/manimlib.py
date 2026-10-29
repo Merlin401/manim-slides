@@ -68,7 +68,7 @@ class Slide(BaseSlide, Scene):
         self._save_slides(
             use_cache=False,
             flush_cache=self.flush_cache,
-            skip_reversing=self.skip_reversing,
+            skip_reversing=self._skip_reversing,
         )
 
 
