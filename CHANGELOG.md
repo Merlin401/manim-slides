@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `manim-slides render --reverse` (and `MANIM_REVERSE`) to generate reversed animations.
 - Added a slide overview to the player (`OVERVIEW` key): a grid of the last frame of every slide
   to jump to.
+- Added `manim_slides.theme` (Manim only, opt-in): a `Theme` (colors, font, sizes, logo, TeX
+  preamble), `TemplateSlide`, a deck scene with a persistent corner title, logo and chapter
+  breadcrumb, helpers to build slides and mobjects in the theme, and Manim's `Text`, `MathTex`,
+  `Arrow`, ... with its defaults. See `examples/theme_deck.py`.
 - Added an overall render progress bar (video seconds done / total, rate, ETA) to Manim scenes, with the
   total taken from `render_seconds`, the video length of the last complete render that is now stored
   in `slides/<Scene>.json`, or from a pre-count. `MANIM_PROGRESS=0` turns it off.

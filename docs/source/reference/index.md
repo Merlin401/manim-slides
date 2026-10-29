@@ -12,6 +12,7 @@ examples
 gui
 html
 large_presentation_tips
+theme
 sync
 IPython magic <ipython_magic>
 sharing
@@ -27,6 +28,8 @@ Slides' executable.
 [Examples](/reference/examples): curated list of examples and their output.
 
 [Graphical User Interface](/reference/gui): details about the main Manim Slide' feature.
+
+[Themes and a Deck Template](/reference/theme): a theme, a deck scene and helpers to build slides (Manim only).
 
 [HTML Presentation](/reference/html): an alternative way of presenting your animations.
 

@@ -46,7 +46,9 @@ Manim Slides will *automatically* detect the one you are using!
 >   you can start and restart, and a slide overview grid to jump around;
 > - slide numbers (`k / N`, counting slides, pages or chapters) drawn by the player
 >   instead of rendered into the clips, with `manim-slides present --numbers`;
-> - an overall render progress bar (Manim only).
+> - an overall render progress bar (Manim only);
+> - `manim_slides.theme`, an opt-in, replaceable theme and deck template (Manim only), see
+>   [`examples/theme_deck.py`](https://github.com/Merlin401/manim-slides/blob/main/examples/theme_deck.py).
 >
 > Install it from Git instead of PyPI, for example with
 > `uv add "manim-slides @ git+https://github.com/Merlin401/manim-slides"`.
