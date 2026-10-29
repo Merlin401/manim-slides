@@ -270,7 +270,10 @@ class Player(QMainWindow):
 
         self.__current_file: Path = self.current_slide_config.file
 
-        self.__playing_reversed_slide = False
+        # The slide whose reversed clip is the one loaded, if any. Going back plays the
+        # reversed clip of the slide that is left: it starts on the screen as it is and
+        # ends on the previous slide finished, which is where the index already points.
+        self._reversed_clip: SlideConfig | None = None
 
         self.__prev_pos = -1
         self.__termination_requested = False
@@ -421,6 +424,7 @@ class Player(QMainWindow):
                 if (
                     status == QMediaPlayer.MediaStatus.EndOfMedia
                     and self.current_slide_config.auto_next
+                    and self._reversed_clip is None  # it led back, not on
                 ):
                     self.load_next_slide()
 
@@ -521,10 +525,26 @@ class Player(QMainWindow):
             return None
 
     @property
+    def reversible_slide_config(self) -> SlideConfig | None:
+        """
+        Return the current slide if its reversed clip can be played to go back, else :data:`None`.
+
+        It needs a reversed clip, a previous slide in the same presentation that the clip
+        leads back to, and not to be a looping slide, whose end is not a fixed state.
+        """
+        slide = self.current_slide_config
+        if (
+            self.current_slide_index > 0
+            and not slide.loop
+            and slide.type == SlideType.Video
+            and slide.rev_file != slide.file
+        ):
+            return slide
+        return None
+
+    @property
     def next_slide_config(self) -> SlideConfig | None:
-        if self.playing_reversed_slide:
-            return self.current_slide_config
-        elif self.current_slide_index < self.current_slides_count - 1:
+        if self.current_slide_index < self.current_slides_count - 1:
             return self.presentation_configs[self.current_presentation_index].slides[
                 self.current_slide_index + 1
             ]
@@ -544,11 +564,8 @@ class Player(QMainWindow):
 
     @property
     def playing_reversed_slide(self) -> bool:
-        return self.__playing_reversed_slide
-
-    @playing_reversed_slide.setter
-    def playing_reversed_slide(self, playing_reversed_slide: bool) -> None:
-        self.__playing_reversed_slide = playing_reversed_slide
+        """Whether the loaded clip is a reversed one, played to go back a slide."""
+        return self._reversed_clip is not None
 
     """
     Loading slides
@@ -571,10 +588,9 @@ class Player(QMainWindow):
             self.info.main_image_label.hide()
             self.info.main_video_widget.show()
 
-            if self.playing_reversed_slide:
+            if self._reversed_clip is not None:
                 self.media_player.setPlaybackRate(
-                    self.current_slide_config.reversed_playback_rate
-                    * self.playback_rate
+                    self._reversed_clip.reversed_playback_rate * self.playback_rate
                 )
             else:
                 self.media_player.setPlaybackRate(
@@ -606,12 +622,12 @@ class Player(QMainWindow):
 
     def load_current_slide(self) -> None:
         slide_config = self.current_slide_config
-        if self.playing_reversed_slide:
-            self.current_file = slide_config.rev_file
+        if self._reversed_clip is not None:
+            self.current_file = self._reversed_clip.rev_file
         else:
             self.current_file = slide_config.file
 
-        if slide_config.loop:
+        if slide_config.loop and self._reversed_clip is None:
             self.media_player.setLoops(-1)
         else:
             self.media_player.setLoops(1)
@@ -660,7 +676,8 @@ class Player(QMainWindow):
         ):
             self.seek_to_end()
 
-    def load_previous_slide(self) -> None:
+    def load_previous_slide(self, reverse_clip: SlideConfig | None = None) -> None:
+        """Go back one slide, playing ``reverse_clip`` (the one of the slide left) if given."""
         if self.current_slide_index > 0:
             self.current_slide_index -= 1
         elif self.current_presentation_index > 0:
@@ -670,13 +687,11 @@ class Player(QMainWindow):
             logger.info("No previous slide.")
             return
 
+        self._reversed_clip = reverse_clip
         self.load_current_slide()
 
     def load_next_slide(self) -> None:
-        if self.playing_reversed_slide:
-            self.playing_reversed_slide = False
-            self.preview_next_slide()  # Slide number did not change, but next did
-        elif self.current_slide_index < self.current_slides_count - 1:
+        if self.current_slide_index < self.current_slides_count - 1:
             self.current_slide_index += 1
         elif self.current_presentation_index < self.presentations_count - 1:
             self.current_presentation_index += 1
@@ -688,6 +703,7 @@ class Player(QMainWindow):
             logger.info("No more slide to play.")
             return
 
+        self._reversed_clip = None
         self.load_current_slide()
 
     """
@@ -738,12 +754,14 @@ class Player(QMainWindow):
         video = self.video_widget
         if not isinstance(video, NumberedVideo):
             return
-        index = self.current_slide_index
-        here, before = self._number_of(index), self._number_of(index - 1)
-        if self.playing_reversed_slide:
+        # the slide whose clip plays: the one of the index, or, reversed, the one left
+        reverse = self.playing_reversed_slide
+        clip_index = self.current_slide_index + (1 if reverse else 0)
+        here, before = self._number_of(clip_index), self._number_of(clip_index - 1)
+        if reverse:
             start, end = here, before
         else:
-            start, end = (before if index > 0 else here), here
+            start, end = (before if clip_index > 0 else here), here
         is_video = self.current_slide_config.type == SlideType.Video
         delay = self.current_presentation_config.number_style.delay
         if start == end or not is_video or delay <= 0 or at_end:
@@ -822,7 +840,7 @@ class Player(QMainWindow):
             self.close_overview()
             return
         self._leave_overview()
-        self.playing_reversed_slide = False
+        self._reversed_clip = None
         self.current_slide_index = index
         self._jump_to_end = True
         self.load_current_slide()
@@ -893,19 +911,22 @@ class Player(QMainWindow):
 
     @Slot()
     def previous(self) -> None:
-        """Go back one slide: play its reversed clip if there is one, else show it finished."""
-        previous = self.previous_slide_config
-        self.playing_reversed_slide = (
-            previous is not None and previous.rev_file != previous.file
-        )
-        self._jump_to_end = previous is not None and not self.playing_reversed_slide
-        self.load_previous_slide()
+        """
+        Go back one slide.
+
+        If the slide being left has a reversed clip, it plays: it starts on the screen as
+        it is and ends on the previous slide finished. Otherwise the previous slide is
+        shown finished at once.
+        """
+        clip = self.reversible_slide_config
+        self._jump_to_end = clip is None and self.previous_slide_config is not None
+        self.load_previous_slide(reverse_clip=clip)
 
     @Slot()
     def reverse(self) -> None:
-        """Go back one slide, playing its reversed clip (the slide itself if it has none)."""
-        self.playing_reversed_slide = self.previous_slide_config is not None
-        self.load_previous_slide()
+        """Go back one slide like PREVIOUS, but with no reversed clip play the previous slide."""
+        self._jump_to_end = False
+        self.load_previous_slide(reverse_clip=self.reversible_slide_config)
 
     @Slot()
     def replay(self) -> None:

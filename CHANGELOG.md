@@ -39,9 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (unreleased-changed)=
 ### Changed
 
-- `PREVIOUS` now plays the reversed clip of the previous slide when there is one (like `REVERSE`),
-  and plays the slide forwards as before when there is none, which is the default. `REVERSE` and
-  `PREVIOUS` no longer leave the player in a reversed state when there is no previous slide.
+- `PREVIOUS` and `REVERSE` now go back exactly one slide with a reversed clip: they play the reversed clip of
+  the slide being left, which starts on the screen as it is and ends on the previous slide finished (the
+  player used to step back first and play the reversed clip of *that* slide, which jumped to its end and
+  landed two slides back). `NEXT` then plays the slide that was left, as usual, and a slide that flows on by
+  itself (`auto_next`) does not advance again after a reversed clip. Looping slides are not played
+  backwards, and neither is a slide that starts a presentation. Without a reversed clip, which is the
+  default, `REVERSE` plays the previous slide forwards and `PREVIOUS` shows it finished (see below).
 - Going back with `PREVIOUS` when there is no reversed clip, and jumping to a slide from the overview, now
   show the slide finished (paused on its last frame, so `NEXT` goes on) instead of playing it from the start,
   which began with the wipe from the page before. Looping slides still play. `--no-skip-to-end` brings the
