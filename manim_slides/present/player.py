@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -6,9 +7,11 @@ from qtpy.QtGui import QCloseEvent, QIcon, QKeyEvent, QPixmap, QScreen
 from qtpy.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoFrame
 from qtpy.QtMultimediaWidgets import QVideoWidget
 from qtpy.QtWidgets import (
+    QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QScrollArea,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -17,6 +20,14 @@ from qtpy.QtWidgets import (
 from ..config import Config, PresentationConfig, SlideConfig, SlideType
 from ..logger import logger
 from ..resources import *
+from .constants import (
+    NOTES_PT,
+    NOTES_PT_STEP,
+    PREVIEW_WIDTH,
+    clamp_notes_pt,
+)
+from .overview import Overview, thumbnail_path
+from .widgets import AspectBox
 
 WINDOW_NAME = "Manim Slides"
 
@@ -30,6 +41,8 @@ class Info(QWidget):
         *,
         aspect_ratio_mode: Qt.AspectRatioMode,
         screen: QScreen | None,
+        resolution: tuple[int, int] = (1920, 1080),
+        notes_pt: float = NOTES_PT,
     ) -> None:
         super().__init__()
 
@@ -37,143 +50,170 @@ class Info(QWidget):
             self.setScreen(screen)
             self.move(screen.geometry().topLeft())
 
-        layout = QHBoxLayout()
+        ratio = resolution[0] / resolution[1]
+
+        def media_box(video_widget: QVideoWidget, image_label: QLabel) -> AspectBox:
+            """Video widget and image label stacked in a box of the slides' aspect ratio."""
+            container = QWidget()
+            container_layout = QVBoxLayout(container)
+            container_layout.setContentsMargins(0, 0, 0, 0)
+            container_layout.addWidget(video_widget)
+            image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            image_label.setScaledContents(False)
+            image_label.setMinimumSize(1, 1)
+            image_label.hide()
+            container_layout.addWidget(image_label)
+            return AspectBox(container, ratio)
+
+        def heading(text: str) -> QLabel:
+            title = QLabel(text)
+            font = title.font()
+            font.setPointSize(10)
+            font.setBold(True)
+            title.setFont(font)
+            title.setStyleSheet("color: #777;")
+            return title
+
+        def readout(caption: str, value: QLabel, size: int) -> QWidget:
+            """Stack a small caption above its live value."""
+            font = value.font()
+            font.setPointSize(size)
+            font.setBold(True)
+            value.setFont(font)
+            value.setAlignment(
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+            )
+            box = QWidget()
+            column = QVBoxLayout(box)
+            column.setContentsMargins(0, 0, 0, 0)
+            column.setSpacing(0)
+            column.addWidget(heading(caption))
+            column.addWidget(value)
+            return box
 
         # Current slide view
 
-        current_container = QWidget()
-        current_container.setFixedSize(720, 480)
-        current_layout = QVBoxLayout(current_container)
-        current_layout.setContentsMargins(0, 0, 0, 0)
-
-        left_layout = QVBoxLayout()
-        left_layout.addWidget(
-            QLabel("Current slide"),
-            alignment=Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
-        )
         self.main_video_widget = QVideoWidget()
         self.main_video_widget.setAspectRatioMode(aspect_ratio_mode)
         self.video_sink = self.main_video_widget.videoSink()
-
-        current_layout.addWidget(self.main_video_widget)
-
         self.main_image_label = QLabel()
-        self.main_image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.main_image_label.setScaledContents(False)
-        self.main_image_label.setMinimumSize(720, 480)
-        self.main_image_label.hide()
-        current_layout.addWidget(self.main_image_label)
-
-        left_layout.addWidget(current_container)
-
-        # Current slide information
-
-        self.scene_label = QLabel()
-        self.slide_label = QLabel()
-        self.start_time = datetime.now(tz=timezone.utc).astimezone()
-        self.time_label = QLabel()
-        self.elapsed_label = QLabel("00h00m00s")
-        self.timer = QTimer()
-        self.timer.start(1000)  # every second
-        self.timer.timeout.connect(self.update_time)
-
-        bottom_left_layout = QHBoxLayout()
-        bottom_left_layout.addWidget(
-            QLabel("Scene:"),
-            alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight,
-        )
-        bottom_left_layout.addWidget(
-            self.scene_label,
-            alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft,
-        )
-        bottom_left_layout.addWidget(
-            QLabel("Slide:"),
-            alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight,
-        )
-        bottom_left_layout.addWidget(
-            self.slide_label,
-            alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft,
-        )
-        bottom_left_layout.addWidget(
-            QLabel("Time:"),
-            alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight,
-        )
-        bottom_left_layout.addWidget(
-            self.time_label,
-            alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft,
-        )
-        bottom_left_layout.addWidget(
-            QLabel("Elapsed:"),
-            alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight,
-        )
-        bottom_left_layout.addWidget(
-            self.elapsed_label,
-            alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft,
-        )
-        left_layout.addLayout(bottom_left_layout)
-        layout.addLayout(left_layout)
-
-        layout.addSpacing(20)
+        current_box = media_box(self.main_video_widget, self.main_image_label)
 
         # Next slide preview
-        preview_container = QWidget()
-        preview_container.setFixedSize(360, 240)
-        perview_layout = QVBoxLayout(preview_container)
-        perview_layout.setContentsMargins(0, 0, 0, 0)
 
-        right_layout = QVBoxLayout()
-        right_layout.addWidget(
-            QLabel("Next slide"),
-            alignment=Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
-        )
         self.next_video_widget = QVideoWidget()
         self.next_video_widget.setAspectRatioMode(aspect_ratio_mode)
         self.next_media_player = QMediaPlayer()
         self.next_media_player.setVideoOutput(self.next_video_widget)
         self.next_media_player.setLoops(-1)
-
-        perview_layout.addWidget(self.next_video_widget)
-
         self.next_image_label = QLabel()
-        self.next_image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.next_image_label.setScaledContents(False)
-        self.next_image_label.setMinimumSize(360, 240)
-        self.next_image_label.hide()
-        perview_layout.addWidget(self.next_image_label)
+        preview_box = media_box(self.next_video_widget, self.next_image_label)
+        preview_box.setFixedWidth(PREVIEW_WIDTH)
 
-        right_layout.addWidget(preview_container)
+        # Slide information
 
-        # Notes
+        self.scene_label = QLabel()
+        self.slide_label = QLabel()
+        self.time_label = QLabel()
+        self.elapsed_label = QLabel()
+        self.start_time: datetime | None = None
+        self.scene_box = readout("Scene", self.scene_label, 11)
+        status = QVBoxLayout()
+        status.addWidget(self.scene_box)
+        status.addWidget(readout("Slide", self.slide_label, 16))
+        status.addWidget(
+            readout("Elapsed (start / restart key)", self.elapsed_label, 16)
+        )
+        status.addWidget(readout("Time", self.time_label, 11))
+        status.addStretch(1)
+
+        self.timer = QTimer()
+        self.timer.start(250)  # so a restart shows up at once
+        self.timer.timeout.connect(self.update_time)
+        self.update_time()
+
+        # Notes: they get the whole right column, in a scroll area that never takes
+        # the keyboard focus, so a click on it does not stop the keys from working.
 
         self.slide_notes = QLabel()
         self.slide_notes.setWordWrap(True)
         self.slide_notes.setTextFormat(Qt.TextFormat.MarkdownText)
-        self.slide_notes.setFixedWidth(360)
-        right_layout.addWidget(
-            self.slide_notes,
-            alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft,
+        self.slide_notes.setAlignment(
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
         )
-        layout.addLayout(right_layout)
+        self.slide_notes.setMargin(8)
+        self.slide_notes.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.notes_scroll = QScrollArea()
+        self.notes_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.notes_scroll.setWidgetResizable(True)
+        self.notes_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.notes_scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.notes_scroll.setWidget(self.slide_notes)
+        self.initial_notes_pt = clamp_notes_pt(notes_pt)
+        self.notes_pt = self.initial_notes_pt
+        self._apply_notes_size()
 
-        widget = QWidget()
+        # Layout: the current slide takes the left column, with the next slide and
+        # the status readouts under it, and everything stretches with the window.
 
-        widget.setLayout(layout)
+        preview_column = QVBoxLayout()
+        preview_column.addWidget(heading("Next slide"))
+        preview_column.addWidget(preview_box)
+        preview_column.addStretch(1)
+        below = QHBoxLayout()
+        below.addLayout(preview_column)
+        below.addSpacing(24)
+        below.addLayout(status)
+        below.addStretch(1)
 
-        main_layout = QVBoxLayout()
-        main_layout.addWidget(widget, alignment=Qt.AlignmentFlag.AlignCenter)
+        left = QVBoxLayout()
+        left.addWidget(heading("Current slide"))
+        left.addWidget(current_box)
+        left.addSpacing(12)
+        left.addLayout(below)
+        left.addStretch(1)
+        right = QVBoxLayout()
+        right.addWidget(heading("Notes"))
+        right.addWidget(self.notes_scroll, 1)
 
-        self.setLayout(main_layout)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(24, 16, 24, 16)
+        row.setSpacing(32)
+        row.addLayout(left, 5)
+        row.addLayout(right, 4)
+
+    def _apply_notes_size(self) -> None:
+        font = self.slide_notes.font()
+        font.setPointSizeF(self.notes_pt)
+        self.slide_notes.setFont(font)
+
+    @Slot()
+    def resize_notes(self, delta: float | None) -> None:
+        """Change the size of the notes by ``delta`` points, or reset it if :data:`None`."""
+        if delta is None:
+            self.notes_pt = self.initial_notes_pt
+        else:
+            self.notes_pt = clamp_notes_pt(self.notes_pt + delta)
+        self._apply_notes_size()
+
+    @Slot()
+    def start_timer(self) -> None:
+        """Start the elapsed timer, or restart it from zero."""
+        self.start_time = datetime.now(tz=timezone.utc).astimezone()
+        self.update_time()
 
     @Slot()
     def update_time(self) -> None:
         now = datetime.now(tz=timezone.utc).astimezone()
-        seconds = (now - self.start_time).total_seconds()
-        hours, seconds = divmod(seconds, 3600)
-        minutes, seconds = divmod(seconds, 60)
         self.time_label.setText(now.strftime("%Y/%m/%d %H:%M:%S"))
-        self.elapsed_label.setText(
-            f"{int(hours):02d}h{int(minutes):02d}m{int(seconds):02d}s"
-        )
+        if self.start_time is None:
+            self.elapsed_label.setText("not started")
+            return
+        hours, seconds = divmod(int((now - self.start_time).total_seconds()), 3600)
+        minutes, seconds = divmod(seconds, 60)
+        self.elapsed_label.setText(f"{hours:02d}h{minutes:02d}m{seconds:02d}s")
 
     @Slot()
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
@@ -206,6 +246,7 @@ class Player(QMainWindow):
         next_terminates_loop: bool = False,
         hide_info_window: bool = False,
         info_window_screen: QScreen | None = None,
+        notes_size: float = NOTES_PT,
     ):
         super().__init__()
 
@@ -284,9 +325,22 @@ class Player(QMainWindow):
         self.info = Info(
             aspect_ratio_mode=aspect_ratio_mode,
             screen=info_window_screen,
+            resolution=self.current_presentation_config.resolution,
+            notes_pt=notes_size,
         )
         self.info.close_event.connect(self.closeEvent)
         self.info.key_press_event.connect(self.keyPressEvent)
+
+        # The overview is one more page of the media stack: the video widget renders on
+        # its own native surface, so a plain overlay on top of it would never show up.
+        self._thumbs: dict[int, list[QPixmap | None]] = {}
+        self._was_playing = False
+        self._page_before_overview: QWidget | None = None
+        self.overview = Overview(self)
+        self.media_stack.addWidget(self.overview)
+        self.overview.jump_requested.connect(self.jump_to)
+        self.overview.close_requested.connect(self.close_overview)
+        self._thumbnails()  # build the cache now rather than at the first key press
         self.video_sink.videoFrameChanged.connect(self.frame_changed)
         self.hide_info_window = hide_info_window
 
@@ -300,6 +354,15 @@ class Player(QMainWindow):
         self.config.keys.REPLAY.connect(self.replay)
         self.config.keys.FULL_SCREEN.connect(self.full_screen)
         self.config.keys.HIDE_MOUSE.connect(self.hide_mouse)
+        self.config.keys.OVERVIEW.connect(self.open_overview)
+        self.config.keys.NOTES_BIGGER.connect(
+            lambda: self.info.resize_notes(NOTES_PT_STEP)
+        )
+        self.config.keys.NOTES_SMALLER.connect(
+            lambda: self.info.resize_notes(-NOTES_PT_STEP)
+        )
+        self.config.keys.NOTES_RESET.connect(lambda: self.info.resize_notes(None))
+        self.config.keys.START_TIMER.connect(self.info.start_timer)
 
         self.dispatch = self.config.keys.dispatch_key_function()
 
@@ -542,15 +605,68 @@ class Player(QMainWindow):
     def presentation_changed_callback(self) -> None:
         index = self.current_presentation_index
         count = self.presentations_count
-        self.info.scene_label.setText(f"{index + 1:4d}/{count:4<d}")
+        self.info.scene_label.setText(f"{index + 1}/{count}")
+        self.info.scene_box.setVisible(count > 1)
 
     @Slot()
     def slide_changed_callback(self) -> None:
         index = self.current_slide_index
         count = self.current_slides_count
-        self.info.slide_label.setText(f"{index + 1:4d}/{count:4<d}")
+        self.info.slide_label.setText(f"{index + 1}/{count}")
         self.info.slide_notes.setText(self.current_slide_config.notes)
+        if self.info.start_time is None and index > 0:
+            self.info.start_timer()  # the talk has started
         self.preview_next_slide()
+
+    def _thumbnails(self) -> list[QPixmap | None]:
+        index = self.current_presentation_index
+        if index not in self._thumbs:
+            slides = self.current_presentation_config.slides
+            with ThreadPoolExecutor() as pool:
+                paths = list(pool.map(thumbnail_path, slides))
+            self._thumbs[index] = [QPixmap(str(p)) if p else None for p in paths]
+        return self._thumbs[index]
+
+    @property
+    def overview_open(self) -> bool:
+        return self.media_stack.currentWidget() is self.overview
+
+    @Slot()
+    def open_overview(self) -> None:
+        """Pause and show a grid of all slides, to jump to one of them."""
+        if self.overview_open:
+            return
+        state = self.media_player.playbackState()
+        self._was_playing = state == QMediaPlayer.PlaybackState.PlayingState
+        self.media_player.pause()
+        w, h = self.current_presentation_config.resolution
+        self._page_before_overview = self.media_stack.currentWidget()
+        self.media_stack.setCurrentWidget(self.overview)
+        self.overview.set_slides(self._thumbnails(), self.current_slide_index, h / w)
+
+    def _leave_overview(self) -> None:
+        """Switch back to the page shown before the overview opened."""
+        if self._page_before_overview is not None:
+            self.media_stack.setCurrentWidget(self._page_before_overview)
+        if self._page_before_overview is self.video_widget:
+            self.video_sink.setVideoFrame(self.frame)  # repaint the paused frame
+
+    @Slot()
+    def close_overview(self) -> None:
+        self._leave_overview()
+        if self._was_playing:
+            self.media_player.play()
+
+    @Slot(int)
+    def jump_to(self, index: int) -> None:
+        """Leave the overview and play the slide of the current presentation at ``index``."""
+        if index == self.current_slide_index:
+            self.close_overview()
+            return
+        self._leave_overview()
+        self.playing_reversed_slide = False
+        self.current_slide_index = index
+        self.load_current_slide()
 
     def preview_next_slide(self) -> None:
         if slide_config := self.next_slide_config:
@@ -694,5 +810,8 @@ class Player(QMainWindow):
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
         key = event.key()
-        self.dispatch(key)
+        if self.overview_open:
+            self.overview.handle_key(key)
+        else:
+            self.dispatch(key)
         event.accept()

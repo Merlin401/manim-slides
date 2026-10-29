@@ -16,10 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `manim-slides prune` to delete stale slide clips and Manim's media cache,
   and pruning after complete renders and when `manim-slides present` exits.
 - Added `manim-slides render --reverse` (and `MANIM_REVERSE`) to generate reversed animations.
+- Added a slide overview to the player (`OVERVIEW` key): a grid of the last frame of every slide
+  to jump to.
+- Added `BIGGER NOTES`, `SMALLER NOTES` and `RESET NOTES SIZE` keys and `--notes-size`
+  (`MANIM_NOTES_PT`) to resize the presenter notes.
+- Added a `START / RESTART TIMER` key. The elapsed timer in the info window now starts when
+  pressed, or when the presentation leaves the first slide.
 
 (unreleased-changed)=
 ### Changed
 
+- The info window layout stretches with the window, with a larger current slide, a smaller
+  next-slide preview and the notes in a scrollable column that never takes the keyboard focus.
 - **Breaking change**: reversed animations are now opt-in. `skip_reversing` defaults to
   `None`, meaning "only when requested"; set it to `False` to always generate them.
 

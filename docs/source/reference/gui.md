@@ -23,6 +23,34 @@ defaults to `./slides`. If you rendered your animations without changing
 directory, you should not worry about that :-)
 :::
 
+## The Info Window
+
+On a second screen (or with `--show-info-window`), an info window shows the current
+slide, a small preview of the next one, the slide counter, the clock, an elapsed
+timer and the presenter notes. Its layout stretches with the window, and the notes
+take the whole right column.
+
+The default keys, all of which can be changed (see below), are:
+
+| Key | Action |
+| --- | --- |
+| `+` / `-` | Make the presenter notes bigger / smaller |
+| `0` | Reset the size of the notes |
+| `S` | Start the elapsed timer, or restart it from zero |
+| `O` or `Esc` | Open the slide overview |
+
+The notes start at `--notes-size` points (or the `MANIM_NOTES_PT` environment
+variable), 18 by default.
+
+The elapsed timer waits until you press `S`, or until the presentation first moves
+off the first slide, so you can set up long before the talk.
+
+The **overview** pauses the video and shows the last frame of every slide in a grid.
+The arrow keys move the highlight, `Enter` jumps to the highlighted slide, digits
+followed by `Enter` jump to a slide number, a click on a tile jumps too, and `O` or
+`Esc` closes the grid and resumes. The thumbnails are cached in a `.thumbs` folder
+next to the slide clips.
+
 ## Configuration File
 
 It is possible to configure Manim Slides via a configuration file, even though

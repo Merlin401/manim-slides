@@ -11,6 +11,7 @@ from ..commons import config_path_option, folder_path_option, verbosity_option
 from ..config import Config, PresentationConfig
 from ..logger import logger
 from ..prune import PRUNE_ENVVAR, prune_presented
+from .constants import NOTES_PT, NOTES_PT_ENVVAR, NOTES_PT_RANGE
 
 
 @click.command()
@@ -241,6 +242,18 @@ def start_at_callback(
     "on a different screen than the main player.",
 )
 @click.option(
+    "--notes-size",
+    "notes_size",
+    metavar="POINTS",
+    type=click.FloatRange(NOTES_PT_RANGE[0], NOTES_PT_RANGE[1]),
+    default=NOTES_PT,
+    envvar=NOTES_PT_ENVVAR,
+    show_envvar=True,
+    show_default=True,
+    help="Starting size of the presenter notes in the info window. Change it "
+    "while presenting with the BIGGER NOTES, SMALLER NOTES and RESET NOTES SIZE keys.",
+)
+@click.option(
     "--prune/--no-prune",
     "prune_on_exit",
     default=True,
@@ -270,6 +283,7 @@ def present(  # noqa: C901
     next_terminates_loop: bool,
     hide_info_window: Literal["always", "never"] | None,
     info_window_screen_number: int | None,
+    notes_size: float,
     prune_on_exit: bool,
 ) -> None:
     """
@@ -367,6 +381,7 @@ def present(  # noqa: C901
         next_terminates_loop=next_terminates_loop,
         hide_info_window=should_hide_info_window,
         info_window_screen=info_window_screen,
+        notes_size=notes_size,
     )
 
     player.show(screens)

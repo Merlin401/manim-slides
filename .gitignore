@@ -51,3 +51,6 @@ rendering_times.csv
 
 # macOS
 .DS_Store
+
+# Cached slide thumbnails
+.thumbs/

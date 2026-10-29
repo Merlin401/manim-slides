@@ -103,6 +103,27 @@ class Keys(BaseModel):
     HIDE_MOUSE: Key = Field(
         default_factory=lambda: Key(ids=[key_id("H")], name="HIDE / SHOW MOUSE")
     )
+    OVERVIEW: Key = Field(
+        default_factory=lambda: Key(
+            ids=[key_id("O"), key_id("Escape")], name="SLIDE OVERVIEW"
+        )
+    )
+    NOTES_BIGGER: Key = Field(
+        default_factory=lambda: Key(
+            ids=[key_id("Plus"), key_id("Equal")], name="BIGGER NOTES"
+        )
+    )
+    NOTES_SMALLER: Key = Field(
+        default_factory=lambda: Key(
+            ids=[key_id("Minus"), key_id("Underscore")], name="SMALLER NOTES"
+        )
+    )
+    NOTES_RESET: Key = Field(
+        default_factory=lambda: Key(ids=[key_id("0")], name="RESET NOTES SIZE")
+    )
+    START_TIMER: Key = Field(
+        default_factory=lambda: Key(ids=[key_id("S")], name="START / RESTART TIMER")
+    )
 
     @model_validator(mode="before")
     @classmethod
