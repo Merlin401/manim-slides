@@ -18,7 +18,7 @@ from .wizard import init, wizard
     "--notify-outdated-version/--silent",
     " /-S",
     is_flag=True,
-    default=True,
+    default=False,
     help="Check if a new version of Manim Slides is available.",
 )
 @click.version_option(__version__, "-v", "--version")
