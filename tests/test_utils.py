@@ -79,3 +79,13 @@ def test_merge_basenames_short_hash() -> None:
     # Stem should be at most 16 hex characters (plus extension)
     assert len(merged.stem) == 16
     assert all(c in "0123456789abcdef" for c in merged.stem)
+
+
+def test_logger_does_not_print_twice() -> None:
+    import logging
+
+    from manim_slides.logger import logger
+
+    assert logger.handlers
+    assert not logger.propagate
+    assert logging.getLogger("manim-slides") is logger

@@ -40,6 +40,8 @@ def make_logger() -> logging.Logger:
     logger = logging.getLogger("manim-slides")
     logger.setLevel(logging.getLogger("manim").level)
     logger.addHandler(rich_handler)
+    # Manim installs a handler on the root logger, which would print every message twice.
+    logger.propagate = False
 
     if not (libav_logger := logging.getLogger("libav")).hasHandlers():
         libav_logger.addHandler(rich_handler)
